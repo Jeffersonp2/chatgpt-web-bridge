@@ -40,12 +40,13 @@ const contextualFileMessage = (files = []) => {
 
   const first = files[0];
   const name = first?.name ? `\nArquivo: ${first.name}` : "";
+  const url = first?.url ? `\nURL: ${first.url}` : "";
 
   return [
-    title + name,
+    title + name + url,
     "",
     "PowerShell:",
-    "$url = $r.files[0].url",
+    "$url = $r.url",
     "$url"
   ].join("\n");
 };
@@ -176,6 +177,7 @@ app.post("/v1/chat/completions", async (req, res) => {
         }
       ],
       files,
+      url: files[0]?.url || null,
       usage: null
     });
   } catch (error) {
@@ -219,7 +221,8 @@ app.post("/v1/responses", async (req, res) => {
         }
       ],
       output_text: outputText,
-      files
+      files,
+      url: files[0]?.url || null
     });
   } catch (error) {
     const status = error?.code === "not_authenticated" ? 401 : 502;
@@ -260,6 +263,7 @@ app.post("/v1/images/generations", async (req, res) => {
         mime_type: file.mime_type
       })),
       files,
+      url: files[0]?.url || null,
       text: String(result?.text || "")
     });
   } catch (error) {
