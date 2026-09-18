@@ -60,6 +60,19 @@ app.get("/v1/models", (_req, res) => {
   });
 });
 
+app.post("/v1/conversation/new", async (_req, res) => {
+  try {
+    await chatgpt.start();
+    await chatgpt.newChat();
+    res.json({
+      ok: true,
+      message: "A new normal ChatGPT conversation is ready."
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 app.post("/v1/chat/completions", async (req, res) => {
   const body = req.body || {};
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -73,7 +86,7 @@ app.post("/v1/chat/completions", async (req, res) => {
 
   try {
     const output = await chatgpt.complete(messages, {
-      newChat: body.new_chat !== false
+      newChat: body.new_chat === true
     });
 
     const completionId = id();
@@ -133,7 +146,7 @@ app.post("/v1/responses", async (req, res) => {
     : [{ role: "user", content: typeof input === "string" ? input : JSON.stringify(input ?? "") }];
 
   try {
-    const output = await chatgpt.complete(messages, { newChat: body.new_chat !== false });
+    const output = await chatgpt.complete(messages, { newChat: body.new_chat === true });
     res.json({
       id: `resp_${crypto.randomUUID().replaceAll("-", "")}`,
       object: "response",
