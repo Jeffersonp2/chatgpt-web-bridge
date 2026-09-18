@@ -269,6 +269,233 @@ export class ChatGPTWebSession {
     return matched || null;
   }
 
+  fileIdFromUrl(url) {
+    try {
+      const parsed = new URL(url);
+      return parsed.searchParams.get("id") || (
+        parsed.href.match(/file_[a-zA-Z0-9]+/)?.[0] ?? null
+      );
+    } catch {
+      return String(url || "").match(/file_[a-zA-Z0-9]+/)?.[0] ?? null;
+    }
+  }
+
+  mimeTypeFromName(name = "", url = "", hint = "") {
+    const full = `${name} ${url} ${hint}`.toLowerCase();
+
+    if (/\.png(?:\?|$)/.test(full)) return "image/png";
+    if (/\.jpe?g(?:\?|$)/.test(full)) return "image/jpeg";
+    if (/\.gif(?:\?|$)/.test(full)) return "image/gif";
+    if (/\.webp(?:\?|$)/.test(full)) return "image/webp";
+    if (/\.svg(?:\?|$)/.test(full)) return "image/svg+xml";
+    if (/\.bmp(?:\?|$)/.test(full)) return "image/bmp";
+
+    if (/\.mp4(?:\?|$)/.test(full)) return "video/mp4";
+    if (/\.webm(?:\?|$)/.test(full)) return "video/webm";
+    if (/\.mov(?:\?|$)/.test(full)) return "video/quicktime";
+    if (/\.mkv(?:\?|$)/.test(full)) return "video/x-matroska";
+    if (/\.avi(?:\?|$)/.test(full)) return "video/x-msvideo";
+
+    if (/\.zip(?:\?|$)/.test(full)) return "application/zip";
+    if (/\.rar(?:\?|$)/.test(full)) return "application/vnd.rar";
+    if (/\.7z(?:\?|$)/.test(full)) return "application/x-7z-compressed";
+    if (/\.pdf(?:\?|$)/.test(full)) return "application/pdf";
+    if (/\.json(?:\?|$)/.test(full)) return "application/json";
+    if (/\.csv(?:\?|$)/.test(full)) return "text/csv";
+    if (/\.txt(?:\?|$)/.test(full)) return "text/plain";
+    if (/\.html?(?:\?|$)/.test(full)) return "text/html";
+    if (/\.css(?:\?|$)/.test(full)) return "text/css";
+    if (/\.m?js(?:\?|$)/.test(full)) return "text/javascript";
+    if (/\.py(?:\?|$)/.test(full)) return "text/x-python";
+    if (/\.bat(?:\?|$)/.test(full)) return "text/x-msdos-batch";
+    if (/\.xlsx?(?:\?|$)/.test(full)) {
+      return full.includes(".xlsx")
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/vnd.ms-excel";
+    }
+    if (/\.docx(?:\?|$)/.test(full)) {
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    }
+    if (/\.doc(?:\?|$)/.test(full)) return "application/msword";
+    if (/\.pptx(?:\?|$)/.test(full)) {
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    }
+
+    if (hint === "pdf") return "application/pdf";
+    if (hint === "text") return "text/plain";
+    if (hint === "html") return "text/html";
+    if (hint === "xls") return "application/vnd.ms-excel";
+    if (hint === "code") return "text/plain";
+
+    return null;
+  }
+
+  kindFromMime(mimeType, name = "", hint = "") {
+    if (mimeType?.startsWith("image/")) return "image";
+    if (mimeType?.startsWith("video/")) return "video";
+    if (mimeType === "application/zip" || mimeType === "application/vnd.rar" || mimeType === "application/x-7z-compressed") {
+      return "archive";
+    }
+    if (mimeType === "application/pdf" || /\.(docx?|xlsx?|pptx?)$/i.test(name)) return "document";
+    if (mimeType?.startsWith("text/") || hint === "code" || /\.(py|js|mjs|html?|css|json|bat)$/i.test(name)) {
+      return "code";
+    }
+    return "file";
+  }
+
+  candidateFromUrl(url, meta = {}) {
+    if (!url) return null;
+
+    const fileId = meta.file_id || this.fileIdFromUrl(url);
+    const name = meta.name || fileId || null;
+    const mimeType = meta.mime_type || this.mimeTypeFromName(name || "", url, meta.icon_key || "");
+    const kind = meta.kind || this.kindFromMime(mimeType, name || "", meta.icon_key || "");
+
+    return {
+      name,
+      mime_type: mimeType,
+      kind,
+      file_id: fileId,
+      url,
+      ...(meta.source ? { source: meta.source } : {})
+    };
+  }
+
+  mergeFiles(...groups) {
+    const result = [];
+    const seen = new Map();
+
+    const score = (file) => [
+      file.url ? 1 : 0,
+      file.file_id ? 1 : 0,
+      file.name ? 1 : 0,
+      file.mime_type ? 1 : 0
+    ].reduce((sum, value) => sum + value, 0);
+
+    for (const group of groups) {
+      for (const raw of Array.isArray(group) ? group : []) {
+        if (!raw) continue;
+
+        const file = raw.url
+          ? this.candidateFromUrl(raw.url, raw)
+          : {
+              name: raw.name || null,
+              mime_type: raw.mime_type || this.mimeTypeFromName(raw.name || "", "", raw.icon_key || ""),
+              kind: raw.kind || this.kindFromMime(
+                raw.mime_type || this.mimeTypeFromName(raw.name || "", "", raw.icon_key || ""),
+                raw.name || "",
+                raw.icon_key || ""
+              ),
+              file_id: raw.file_id || null,
+              url: null,
+              ...(raw.source ? { source: raw.source } : {})
+            };
+
+        const key = file.url || file.file_id || (
+          file.name ? `name:${String(file.name).toLowerCase()}` : null
+        );
+        if (!key) continue;
+
+        const existingIndex = seen.get(key);
+        if (existingIndex === undefined) {
+          seen.set(key, result.length);
+          result.push(file);
+          continue;
+        }
+
+        const existing = result[existingIndex];
+        if (score(file) > score(existing)) {
+          result[existingIndex] = { ...existing, ...file };
+        } else {
+          result[existingIndex] = {
+            ...file,
+            ...existing,
+            name: existing.name || file.name,
+            mime_type: existing.mime_type || file.mime_type,
+            kind: existing.kind || file.kind,
+            file_id: existing.file_id || file.file_id,
+            url: existing.url || file.url
+          };
+        }
+      }
+    }
+
+    return result;
+  }
+
+  isLikelyFileUrl(url) {
+    const value = String(url || "").toLowerCase();
+    return value.includes("/backend-api/estuary/content") ||
+      value.includes("file_") ||
+      /\.(png|jpe?g|gif|webp|svg|bmp|mp4|webm|mov|mkv|avi|zip|rar|7z|pdf|txt|csv|json|html?|css|m?js|py|bat|xlsx?|docx?|pptx?)(?:\?|$)/i.test(value);
+  }
+
+  async snapshotMediaUrls() {
+    return new Set(await this.page.locator("img[src], video[src], source[src]").evaluateAll((elements) =>
+      elements
+        .map((el) => el.src || el.getAttribute("src"))
+        .filter(Boolean)
+    ).catch(() => []));
+  }
+
+  createNetworkCapture() {
+    const captured = new Map();
+
+    const add = (url, meta = {}, force = false) => {
+      if (!url || (!force && !this.isLikelyFileUrl(url))) return;
+
+      const current = captured.get(url) || {};
+      captured.set(url, {
+        ...current,
+        ...meta,
+        url,
+        name: meta.name || current.name || null,
+        mime_type: meta.mime_type || current.mime_type || null,
+        source: meta.source || current.source || "network"
+      });
+    };
+
+    const onRequest = (request) => {
+      add(request.url(), {
+        source: "network-request",
+        resource_type: request.resourceType()
+      });
+    };
+
+    const onResponse = async (response) => {
+      try {
+        const headers = await response.allHeaders();
+        const contentType = headers["content-type"]?.split(";")[0]?.trim() || null;
+        const disposition = headers["content-disposition"] || "";
+        const filenameMatch =
+          /filename\*=UTF-8''([^;]+)/i.exec(disposition) ||
+          /filename="?([^";]+)"?/i.exec(disposition);
+
+        const filename = filenameMatch
+          ? decodeURIComponent(filenameMatch[1])
+          : null;
+
+        add(response.url(), {
+          source: "network-response",
+          mime_type: contentType,
+          name: filename
+        }, /attachment/i.test(disposition));
+      } catch {}
+    };
+
+    this.page.on("request", onRequest);
+    this.page.on("response", onResponse);
+
+    return {
+      files: () => [...captured.values()].map((entry) => this.candidateFromUrl(entry.url, entry)),
+      urls: () => new Set(captured.keys()),
+      stop: () => {
+        this.page.off("request", onRequest);
+        this.page.off("response", onResponse);
+      }
+    };
+  }
+
   async extractAssistantTurnData(turnLocator) {
     return await turnLocator.evaluate((node) => {
       const absoluteUrl = (value) => {
@@ -279,83 +506,11 @@ export class ChatGPTWebSession {
         }
       };
 
-      const guessMimeType = (name, url, tagName) => {
-        const full = `${name || ""} ${url || ""}`.toLowerCase();
-
-        if (tagName === "img" || /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|$)/i.test(full)) {
-          if (full.includes(".png")) return "image/png";
-          if (full.includes(".jpg") || full.includes(".jpeg")) return "image/jpeg";
-          if (full.includes(".gif")) return "image/gif";
-          if (full.includes(".webp")) return "image/webp";
-          if (full.includes(".svg")) return "image/svg+xml";
-          return "image/*";
-        }
-
-        if (tagName === "video" || tagName === "source" || /\.(mp4|webm|mov|mkv|avi)(\?|$)/i.test(full)) {
-          if (full.includes(".mp4")) return "video/mp4";
-          if (full.includes(".webm")) return "video/webm";
-          if (full.includes(".mov")) return "video/quicktime";
-          if (full.includes(".mkv")) return "video/x-matroska";
-          if (full.includes(".avi")) return "video/x-msvideo";
-          return "video/*";
-        }
-
-        if (/\.zip(\?|$)/i.test(full)) return "application/zip";
-        if (/\.pdf(\?|$)/i.test(full)) return "application/pdf";
-        if (/\.txt(\?|$)/i.test(full)) return "text/plain";
-        if (/\.html?(\?|$)/i.test(full)) return "text/html";
-        if (/\.css(\?|$)/i.test(full)) return "text/css";
-        if (/\.js(\?|$)/i.test(full)) return "text/javascript";
-        if (/\.json(\?|$)/i.test(full)) return "application/json";
-        if (/\.py(\?|$)/i.test(full)) return "text/x-python";
-
-        return null;
-      };
-
-      const guessKind = (mimeType, tagName) => {
-        if (mimeType?.startsWith("image/") || tagName === "img") return "image";
-        if (mimeType?.startsWith("video/") || tagName === "video" || tagName === "source") return "video";
-        if (mimeType?.startsWith("text/")) return "text";
-        if (mimeType === "application/zip") return "archive";
-        if (mimeType === "application/pdf") return "document";
-        return "file";
-      };
-
-      const pickName = (el, url) => {
-        const direct =
-          el.getAttribute("download") ||
-          el.getAttribute("data-filename") ||
-          el.getAttribute("aria-label");
-
-        if (direct && direct.trim()) return direct.trim();
-
-        try {
-          const parsed = new URL(url);
-          const queryName = parsed.searchParams.get("filename") || parsed.searchParams.get("name");
-          if (queryName) return queryName;
-
-          const fileId = parsed.searchParams.get("id");
-          if (fileId) return fileId;
-
-          const last = parsed.pathname.split("/").pop();
-          if (last && !/content$/i.test(last)) return decodeURIComponent(last);
-        } catch {}
-
-        const text = (el.textContent || "").trim();
-        if (text && text.length <= 180) return text;
-
-        return null;
-      };
-
-      const elements = node.querySelectorAll("a[href], img[src], video[src], source[src]");
       const files = [];
       const seen = new Set();
 
-      for (const el of elements) {
-        const tagName = el.tagName.toLowerCase();
-        const rawUrl = el.getAttribute("href") || el.getAttribute("src");
-        if (!rawUrl) continue;
-
+      for (const el of node.querySelectorAll("a[href], img[src], video[src], source[src]")) {
+        const rawUrl = el.href || el.src || el.getAttribute("href") || el.getAttribute("src");
         const url = absoluteUrl(rawUrl);
         if (!url) continue;
 
@@ -367,28 +522,169 @@ export class ChatGPTWebSession {
         if (!interesting || seen.has(url)) continue;
         seen.add(url);
 
-        let fileId = null;
-        try {
-          fileId = new URL(url).searchParams.get("id");
-        } catch {}
-
-        const name = pickName(el, url);
-        const mimeType = guessMimeType(name, url, tagName);
+        const name =
+          el.getAttribute("download") ||
+          el.getAttribute("data-filename") ||
+          el.getAttribute("alt") ||
+          el.getAttribute("aria-label") ||
+          null;
 
         files.push({
           name,
-          mime_type: mimeType,
-          kind: guessKind(mimeType, tagName),
-          file_id: fileId,
-          url
+          url,
+          source: "assistant-dom"
         });
       }
 
+      const artifacts = [...node.querySelectorAll('[class*="group/artifact-row"]')].map((row) => {
+        const buttons = [...row.querySelectorAll("button[aria-label]")];
+        const openButton = buttons.find((button) => {
+          const label = (button.getAttribute("aria-label") || "").trim();
+          return label && !/^(baixar arquivo|download file)$/i.test(label);
+        });
+
+        const icon = row.querySelector("[data-library-file-icon-key]");
+        const name = openButton?.getAttribute("aria-label")?.trim() || null;
+
+        return {
+          name,
+          icon_key: icon?.getAttribute("data-library-file-icon-key") || null,
+          icon_kind: icon?.getAttribute("data-library-file-icon-kind") || null,
+          source: "artifact-row"
+        };
+      });
+
       return {
         text: (node.innerText || "").trim(),
-        files
+        files,
+        artifacts
       };
     });
+  }
+
+  async collectGlobalMediaFiles(beforeMediaUrls) {
+    const items = await this.page.locator("img[src], video[src], source[src]").evaluateAll((elements) =>
+      elements.map((el) => ({
+        tag: el.tagName.toLowerCase(),
+        url: el.src || el.getAttribute("src"),
+        name: el.getAttribute("alt") || el.getAttribute("aria-label") || null
+      }))
+    ).catch(() => []);
+
+    return items
+      .filter((item) => item.url && !beforeMediaUrls.has(item.url) && this.isLikelyFileUrl(item.url))
+      .map((item) => this.candidateFromUrl(item.url, {
+        name: item.name,
+        kind: item.tag === "img" ? "image" : item.tag === "video" || item.tag === "source" ? "video" : undefined,
+        source: "global-media-dom"
+      }));
+  }
+
+  artifactFilesFromMetadata(artifacts = []) {
+    return artifacts
+      .filter((artifact) => artifact?.name)
+      .map((artifact) => ({
+        name: artifact.name,
+        mime_type: this.mimeTypeFromName(artifact.name, "", artifact.icon_key || ""),
+        kind: this.kindFromMime(
+          this.mimeTypeFromName(artifact.name, "", artifact.icon_key || ""),
+          artifact.name,
+          artifact.icon_key || ""
+        ),
+        file_id: null,
+        url: null,
+        source: artifact.source || "artifact-row"
+      }));
+  }
+
+  async clickDownloadLikeButtons(turnLocator, networkCapture) {
+    const buttons = turnLocator.locator("button");
+    const count = Math.min(await buttons.count(), 30);
+    const discovered = [];
+    const clickedLabels = new Set();
+
+    for (let index = 0; index < count; index += 1) {
+      const button = buttons.nth(index);
+
+      const info = await button.evaluate((el) => {
+        const text = (el.textContent || "").trim();
+        const aria = (el.getAttribute("aria-label") || "").trim();
+        const inArtifactRow = Boolean(el.closest('[class*="group/artifact-row"]'));
+        return { text, aria, inArtifactRow };
+      }).catch(() => null);
+
+      if (!info) continue;
+
+      const label = info.aria || info.text;
+      if (!label || clickedLabels.has(label)) continue;
+
+      const explicitDownload = /(baixar|download)/i.test(label);
+      const looksLikeFileButton =
+        !info.inArtifactRow &&
+        /(?:\b|\.)(zip|rar|7z|pdf|txt|csv|json|py|js|html?|css|bat|xlsx?|docx?|pptx?|mp4|webm|mov|png|jpe?g|gif|webp)(?:\b|\.)/i.test(label);
+
+      if (!explicitDownload && !looksLikeFileButton) continue;
+
+      clickedLabels.add(label);
+
+      const beforeUrls = networkCapture.urls();
+
+      try {
+        await button.click({ timeout: 2500 });
+      } catch {
+        continue;
+      }
+
+      await sleep(900);
+
+      const afterFiles = networkCapture.files();
+      const newFiles = afterFiles.filter((file) => file.url && !beforeUrls.has(file.url));
+
+      for (const file of newFiles) {
+        const cleanedLabel = label
+          .replace(/^(baixar|download)\s+/i, "")
+          .replace(/^(o|a)\s+/i, "")
+          .trim();
+
+        discovered.push({
+          ...file,
+          name: file.name || cleanedLabel || null,
+          source: "download-button"
+        });
+      }
+    }
+
+    return discovered;
+  }
+
+  async collectTurnResult(turnLocator, beforeMediaUrls, networkCapture, { clickDownloads = false } = {}) {
+    const direct = await this.extractAssistantTurnData(turnLocator).catch(() => ({
+      text: "",
+      files: [],
+      artifacts: []
+    }));
+
+    const globalMedia = await this.collectGlobalMediaFiles(beforeMediaUrls);
+    const artifactFiles = this.artifactFilesFromMetadata(direct.artifacts);
+
+    let clickedFiles = [];
+    if (clickDownloads) {
+      clickedFiles = await this.clickDownloadLikeButtons(turnLocator, networkCapture);
+      await sleep(500);
+    }
+
+    const files = this.mergeFiles(
+      direct.files,
+      globalMedia,
+      networkCapture.files(),
+      clickedFiles,
+      artifactFiles
+    );
+
+    return {
+      text: String(direct.text || "").trim(),
+      files
+    };
   }
 
   async sendPrompt(prompt) {
@@ -407,60 +703,103 @@ export class ChatGPTWebSession {
       throw new ConversationLimitError(limitBeforeSend);
     }
 
-    const before = await this.page.locator('[data-message-author-role="assistant"]').count();
-    const composer = await this.findComposer();
+    const beforeAssistantCount = await this.page.locator('[data-message-author-role="assistant"]').count();
+    const beforeMediaUrls = await this.snapshotMediaUrls();
+    const networkCapture = this.createNetworkCapture();
 
-    await composer.click();
-    await composer.fill(prompt).catch(async () => {
-      await composer.pressSequentially(prompt, { delay: 1 });
-    });
-    await composer.press("Enter");
+    try {
+      const composer = await this.findComposer();
 
-    const startedAt = Date.now();
-    let lastResult = { text: "", files: [] };
-    let lastSnapshot = "";
-    let stableSince = Date.now();
+      await composer.click();
+      await composer.fill(prompt).catch(async () => {
+        await composer.pressSequentially(prompt, { delay: 1 });
+      });
+      await composer.press("Enter");
 
-    while (Date.now() - startedAt < this.timeoutMs) {
-      const conversationLimit = await this.getConversationLimitMessage();
-      if (conversationLimit) {
-        throw new ConversationLimitError(conversationLimit);
-      }
+      const startedAt = Date.now();
+      let lastResult = { text: "", files: [] };
+      let lastSnapshot = "";
+      let stableSince = Date.now();
 
-      const assistantMessages = this.page.locator('[data-message-author-role="assistant"]');
-      const count = await assistantMessages.count();
-
-      if (count > before) {
-        const latest = assistantMessages.nth(count - 1);
-        const result = await this.extractAssistantTurnData(latest).catch(() => ({
-          text: "",
-          files: []
-        }));
-
-        const snapshot = JSON.stringify(result);
-
-        if ((result.text || result.files.length) && snapshot !== lastSnapshot) {
-          lastResult = result;
-          lastSnapshot = snapshot;
-          stableSince = Date.now();
+      while (Date.now() - startedAt < this.timeoutMs) {
+        const conversationLimit = await this.getConversationLimitMessage();
+        if (conversationLimit) {
+          throw new ConversationLimitError(conversationLimit);
         }
 
-        const stopVisible = await this.page
-          .locator('button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Parar"]')
-          .first()
-          .isVisible()
-          .catch(() => false);
+        const assistantMessages = this.page.locator('[data-message-author-role="assistant"]');
+        const count = await assistantMessages.count();
 
-        if ((lastResult.text || lastResult.files.length) && !stopVisible && Date.now() - stableSince > 1200) {
-          return lastResult;
+        if (count > beforeAssistantCount) {
+          const latest = assistantMessages.nth(count - 1);
+
+          const result = await this.collectTurnResult(
+            latest,
+            beforeMediaUrls,
+            networkCapture
+          );
+
+          const snapshot = JSON.stringify(result);
+
+          if ((result.text || result.files.length) && snapshot !== lastSnapshot) {
+            lastResult = result;
+            lastSnapshot = snapshot;
+            stableSince = Date.now();
+          }
+
+          const stopVisible = await this.page
+            .locator('button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Parar"]')
+            .first()
+            .isVisible()
+            .catch(() => false);
+
+          if ((lastResult.text || lastResult.files.length) && !stopVisible && Date.now() - stableSince > 1800) {
+            // Give late-rendered image/file cards a brief chance to attach to the completed turn.
+            await sleep(900);
+
+            const finalResult = await this.collectTurnResult(
+              latest,
+              beforeMediaUrls,
+              networkCapture,
+              { clickDownloads: true }
+            );
+
+            return {
+              text: finalResult.text || lastResult.text,
+              files: this.mergeFiles(lastResult.files, finalResult.files)
+            };
+          }
         }
+
+        await sleep(350);
       }
 
-      await sleep(350);
+      if (lastResult.text || lastResult.files.length) {
+        const assistantMessages = this.page.locator('[data-message-author-role="assistant"]');
+        const count = await assistantMessages.count();
+
+        if (count > beforeAssistantCount) {
+          const latest = assistantMessages.nth(count - 1);
+          const finalResult = await this.collectTurnResult(
+            latest,
+            beforeMediaUrls,
+            networkCapture,
+            { clickDownloads: true }
+          );
+
+          return {
+            text: finalResult.text || lastResult.text,
+            files: this.mergeFiles(lastResult.files, finalResult.files)
+          };
+        }
+
+        return lastResult;
+      }
+
+      throw new Error("Timed out waiting for a ChatGPT response.");
+    } finally {
+      networkCapture.stop();
     }
-
-    if (lastResult.text || lastResult.files.length) return lastResult;
-    throw new Error("Timed out waiting for a ChatGPT response.");
   }
 
   async complete(messages, options = {}) {
