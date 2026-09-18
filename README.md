@@ -57,8 +57,8 @@ Você continua usando sua conta do ChatGPT no navegador. O bridge recebe o input
 - ✅ Perfil do navegador salvo localmente
 - ✅ Fila para evitar duas mensagens brigando pela mesma aba
 - 🚧 Upload/entrada de imagens
-- 🚧 Geração e download de imagens
-- 🚧 Extração automática de arquivos gerados
+- ✅ Captura de links de imagens geradas
+- ✅ Extração de links de arquivos/anexos gerados (imagem, vídeo, ZIP, PDF, código e outros)
 - 🚧 Streaming token-a-token real
 - 🚧 Múltiplas sessões/abas simultâneas
 
@@ -250,6 +250,55 @@ Resposta:
 }
 ```
 
+
+---
+
+## 📎 Arquivos gerados
+
+Quando o ChatGPT gerar ou anexar um arquivo no turno da resposta, o bridge tenta detectar o link e devolve uma lista `files[]`.
+
+Isso vale para imagens, vídeos, ZIP, PDF, arquivos de texto/código e outros anexos que apareçam no ChatGPT Web.
+
+Exemplo:
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "Arquivo criado."
+      }
+    }
+  ],
+  "files": [
+    {
+      "name": "file_00000000...",
+      "mime_type": "image/*",
+      "kind": "image",
+      "file_id": "file_00000000...",
+      "url": "https://chatgpt.com/backend-api/estuary/content?id=file_..."
+    }
+  ]
+}
+```
+
+Os links retornados pelo ChatGPT podem ser temporários e podem depender da sessão autenticada.
+
+Também existe:
+
+```text
+POST /v1/images/generations
+```
+
+com body:
+
+```json
+{
+  "prompt": "gere uma imagem qualquer"
+}
+```
+
 ---
 
 ## 🧠 Responses API
@@ -324,9 +373,9 @@ As variáveis disponíveis estão em `.env.example`.
 - [ ] Melhor detecção de término da resposta
 
 ### v0.3
-- [ ] Geração de imagens
-- [ ] Download e retorno de arquivos
-- [ ] Retorno de imagens em URL/base64
+- [x] Captura de links de imagens geradas
+- [x] Retorno de links de arquivos/anexos gerados
+- [x] Retorno de imagens por URL\n- [ ] Retorno opcional em base64
 - [ ] Compatibilidade maior com SDKs OpenAI
 
 ### v0.4
