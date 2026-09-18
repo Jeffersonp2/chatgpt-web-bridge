@@ -769,12 +769,13 @@ export class ChatGPTWebSession {
       const clickKey = `${index}:${info.artifactName || ""}:${label}`;
       if (!label || clickedLabels.has(clickKey)) continue;
 
-      const explicitDownload = /(baixar|download)/i.test(label);
-      const looksLikeFileButton =
-        !info.inArtifactRow &&
-        /(?:\b|\.)(zip|rar|7z|pdf|txt|csv|json|py|js|html?|css|bat|xlsx?|docx?|pptx?|mp4|webm|mov|png|jpe?g|gif|webp)(?:\b|\.)/i.test(label);
+      // Only click the real artifact download control. Generic text buttons such as
+      // "Baixar o teste.pdf" can open ChatGPT's preview panel instead of downloading.
+      const isArtifactDownload =
+        info.inArtifactRow &&
+        /^(baixar arquivo|download file)$/i.test(info.aria || "");
 
-      if (!explicitDownload && !looksLikeFileButton) continue;
+      if (!isArtifactDownload) continue;
 
       clickedLabels.add(clickKey);
 
