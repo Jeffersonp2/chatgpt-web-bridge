@@ -6,8 +6,6 @@
 
 **Sem Ollama • sem modelo local • sem chave de API obrigatória**
 
-[🐍 **Jogar Snake depois de iniciar o servidor**](http://127.0.0.1:4310/snake.html)
-
 ![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)
 ![API](https://img.shields.io/badge/API-OpenAI%20Compatible-412991)
 ![Local](https://img.shields.io/badge/Bind-127.0.0.1-blue)
@@ -58,7 +56,6 @@ Você continua usando sua conta do ChatGPT no navegador. O bridge recebe o input
 - ✅ Texto e código
 - ✅ Perfil do navegador salvo localmente
 - ✅ Fila para evitar duas mensagens brigando pela mesma aba
-- ✅ Mini game Snake
 - 🚧 Upload/entrada de imagens
 - 🚧 Geração e download de imagens
 - 🚧 Extração automática de arquivos gerados
@@ -256,21 +253,6 @@ local
 
 ---
 
-## 🐍 Mini game
-
-Depois de iniciar:
-
-### http://127.0.0.1:4310/snake.html
-
-Controles:
-
-```text
-WASD / setas = mover
-Espaço       = reiniciar
-```
-
----
-
 ## ⚙️ Configuração
 
 As variáveis disponíveis estão em `.env.example`.
@@ -294,7 +276,6 @@ As variáveis disponíveis estão em `.env.example`.
 - [x] Login persistente
 - [x] Chat Completions
 - [x] Responses API básica
-- [x] Snake
 - [x] Proteção do perfil via `.gitignore`
 
 ### v0.2
