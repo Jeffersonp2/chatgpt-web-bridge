@@ -17,6 +17,39 @@ const chatgpt = new ChatGPTWebSession({
 const id = () => `chatcmpl_${crypto.randomUUID().replaceAll("-", "")}`;
 const unix = () => Math.floor(Date.now() / 1000);
 
+const contextualFileMessage = (files = []) => {
+  if (!files.length) return "";
+
+  const kinds = new Set(files.map((file) => file?.kind).filter(Boolean));
+
+  let title = "Arquivo gerado com sucesso.";
+
+  if (files.length > 1) {
+    title = `${files.length} arquivos gerados com sucesso.`;
+  } else if (kinds.has("image")) {
+    title = "Imagem gerada com sucesso.";
+  } else if (kinds.has("video")) {
+    title = "Vídeo gerado com sucesso.";
+  } else if (kinds.has("archive")) {
+    title = "Arquivo compactado gerado com sucesso.";
+  } else if (kinds.has("document")) {
+    title = "Documento gerado com sucesso.";
+  } else if (kinds.has("code")) {
+    title = "Arquivo de código gerado com sucesso.";
+  }
+
+  const first = files[0];
+  const name = first?.name ? `\nArquivo: ${first.name}` : "";
+
+  return [
+    title + name,
+    "",
+    "PowerShell:",
+    "$url = $r.files[0].url",
+    "$url"
+  ].join("\n");
+};
+
 app.get("/", (_req, res) => {
   res.json({
     name: "testeGPT Local Bridge",
@@ -93,9 +126,7 @@ app.post("/v1/chat/completions", async (req, res) => {
     });
 
     const files = Array.isArray(result?.files) ? result.files : [];
-    const outputText = String(result?.text || "").trim() || (
-      files.length ? "File(s) generated successfully." : ""
-    );
+    const outputText = String(result?.text || "").trim() || contextualFileMessage(files);
 
     const completionId = id();
 
@@ -172,9 +203,7 @@ app.post("/v1/responses", async (req, res) => {
   try {
     const result = await chatgpt.complete(messages, { newChat: body.new_chat === true });
     const files = Array.isArray(result?.files) ? result.files : [];
-    const outputText = String(result?.text || "").trim() || (
-      files.length ? "File(s) generated successfully." : ""
-    );
+    const outputText = String(result?.text || "").trim() || contextualFileMessage(files);
 
     res.json({
       id: `resp_${crypto.randomUUID().replaceAll("-", "")}`,
