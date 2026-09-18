@@ -784,13 +784,52 @@ export class ChatGPTWebSession {
         ? this.page.url()
         : this.lastConversationUrl;
 
+      const downloadPromise = this.page
+        .waitForEvent("download", { timeout: 6000 })
+        .catch(() => null);
+
+      let clicked = false;
+
       try {
         await button.click({ timeout: 2500 });
+        clicked = true;
       } catch {
-        continue;
+        // Some artifact rows remain in the DOM while visually collapsed/hidden.
+        // Dispatching the DOM click still invokes ChatGPT's download handler.
+        try {
+          await button.evaluate((el) => el.click());
+          clicked = true;
+        } catch {}
       }
 
-      await sleep(900);
+      if (!clicked) continue;
+
+      const download = await downloadPromise;
+      await sleep(500);
+
+      if (download) {
+        try {
+          const downloadUrl = download.url();
+          const suggestedName = download.suggestedFilename();
+
+          if (
+            downloadUrl &&
+            /^https?:/i.test(downloadUrl) &&
+            this.isLikelyFileUrl(downloadUrl)
+          ) {
+            discovered.push(this.candidateFromUrl(downloadUrl, {
+              name: suggestedName || info.artifactName || null,
+              mime_type: this.mimeTypeFromName(
+                suggestedName || info.artifactName || "",
+                downloadUrl
+              ),
+              source: "playwright-download"
+            }));
+          }
+        } catch {}
+
+        await download.cancel().catch(() => {});
+      }
 
       const afterFiles = networkCapture.files();
       const newFiles = afterFiles.filter((file) => file.url && !beforeUrls.has(file.url));
