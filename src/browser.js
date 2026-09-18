@@ -2,6 +2,7 @@ import { chromium } from "playwright";
 import path from "node:path";
 
 const CHATGPT_URL = "https://chatgpt.com/";
+const CHATGPT_LOGIN_URL = "https://chatgpt.com/auth/login";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -47,6 +48,25 @@ export class ChatGPTWebSession {
     await this.context?.close();
     this.context = null;
     this.page = null;
+  }
+
+  async openLoginIfNeeded() {
+    await this.start();
+
+    const auth = await this.getAuthState();
+
+    if (!auth.authenticated) {
+      await this.page.goto(CHATGPT_LOGIN_URL, { waitUntil: "domcontentloaded" });
+      await this.page.bringToFront().catch(() => {});
+      return { authenticated: false, url: this.page.url() };
+    }
+
+    if (!this.page.url().startsWith(CHATGPT_URL)) {
+      await this.page.goto(CHATGPT_URL, { waitUntil: "domcontentloaded" });
+    }
+
+    await this.page.bringToFront().catch(() => {});
+    return { authenticated: true, url: this.page.url() };
   }
 
   isConversationPage() {
