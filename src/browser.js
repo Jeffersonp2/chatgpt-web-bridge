@@ -221,6 +221,21 @@ export class ChatGPTWebSession {
     }
   }
 
+  assistantResultToHistoryText(result) {
+    const text = String(result?.text || "").trim();
+    if (text) return text;
+
+    if (Array.isArray(result?.files) && result.files.length) {
+      const names = result.files
+        .map((file) => file.name || file.file_id || file.url)
+        .filter(Boolean)
+        .join(", ");
+      return names ? `Generated files: ${names}` : "Generated file attachment.";
+    }
+
+    return "";
+  }
+
   buildRolloverPrompt(messages = []) {
     const historySource = this.bridgeHistory.length ? this.bridgeHistory : messages;
     const history = this.buildPrompt(historySource);
@@ -254,6 +269,128 @@ export class ChatGPTWebSession {
     return matched || null;
   }
 
+  async extractAssistantTurnData(turnLocator) {
+    return await turnLocator.evaluate((node) => {
+      const absoluteUrl = (value) => {
+        try {
+          return new URL(value, location.origin).toString();
+        } catch {
+          return null;
+        }
+      };
+
+      const guessMimeType = (name, url, tagName) => {
+        const full = `${name || ""} ${url || ""}`.toLowerCase();
+
+        if (tagName === "img" || /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|$)/i.test(full)) {
+          if (full.includes(".png")) return "image/png";
+          if (full.includes(".jpg") || full.includes(".jpeg")) return "image/jpeg";
+          if (full.includes(".gif")) return "image/gif";
+          if (full.includes(".webp")) return "image/webp";
+          if (full.includes(".svg")) return "image/svg+xml";
+          return "image/*";
+        }
+
+        if (tagName === "video" || tagName === "source" || /\.(mp4|webm|mov|mkv|avi)(\?|$)/i.test(full)) {
+          if (full.includes(".mp4")) return "video/mp4";
+          if (full.includes(".webm")) return "video/webm";
+          if (full.includes(".mov")) return "video/quicktime";
+          if (full.includes(".mkv")) return "video/x-matroska";
+          if (full.includes(".avi")) return "video/x-msvideo";
+          return "video/*";
+        }
+
+        if (/\.zip(\?|$)/i.test(full)) return "application/zip";
+        if (/\.pdf(\?|$)/i.test(full)) return "application/pdf";
+        if (/\.txt(\?|$)/i.test(full)) return "text/plain";
+        if (/\.html?(\?|$)/i.test(full)) return "text/html";
+        if (/\.css(\?|$)/i.test(full)) return "text/css";
+        if (/\.js(\?|$)/i.test(full)) return "text/javascript";
+        if (/\.json(\?|$)/i.test(full)) return "application/json";
+        if (/\.py(\?|$)/i.test(full)) return "text/x-python";
+
+        return null;
+      };
+
+      const guessKind = (mimeType, tagName) => {
+        if (mimeType?.startsWith("image/") || tagName === "img") return "image";
+        if (mimeType?.startsWith("video/") || tagName === "video" || tagName === "source") return "video";
+        if (mimeType?.startsWith("text/")) return "text";
+        if (mimeType === "application/zip") return "archive";
+        if (mimeType === "application/pdf") return "document";
+        return "file";
+      };
+
+      const pickName = (el, url) => {
+        const direct =
+          el.getAttribute("download") ||
+          el.getAttribute("data-filename") ||
+          el.getAttribute("aria-label");
+
+        if (direct && direct.trim()) return direct.trim();
+
+        try {
+          const parsed = new URL(url);
+          const queryName = parsed.searchParams.get("filename") || parsed.searchParams.get("name");
+          if (queryName) return queryName;
+
+          const fileId = parsed.searchParams.get("id");
+          if (fileId) return fileId;
+
+          const last = parsed.pathname.split("/").pop();
+          if (last && !/content$/i.test(last)) return decodeURIComponent(last);
+        } catch {}
+
+        const text = (el.textContent || "").trim();
+        if (text && text.length <= 180) return text;
+
+        return null;
+      };
+
+      const elements = node.querySelectorAll("a[href], img[src], video[src], source[src]");
+      const files = [];
+      const seen = new Set();
+
+      for (const el of elements) {
+        const tagName = el.tagName.toLowerCase();
+        const rawUrl = el.getAttribute("href") || el.getAttribute("src");
+        if (!rawUrl) continue;
+
+        const url = absoluteUrl(rawUrl);
+        if (!url) continue;
+
+        const interesting =
+          url.includes("/backend-api/estuary/content") ||
+          url.includes("file_") ||
+          url.startsWith("blob:");
+
+        if (!interesting || seen.has(url)) continue;
+        seen.add(url);
+
+        let fileId = null;
+        try {
+          fileId = new URL(url).searchParams.get("id");
+        } catch {}
+
+        const name = pickName(el, url);
+        const mimeType = guessMimeType(name, url, tagName);
+
+        files.push({
+          name,
+          mime_type: mimeType,
+          kind: guessKind(mimeType, tagName),
+          file_id: fileId,
+          url
+        });
+      }
+
+      return {
+        text: (node.innerText || "").trim(),
+        files
+      };
+    });
+  }
+
   async sendPrompt(prompt) {
     const auth = await this.getAuthState();
 
@@ -280,7 +417,8 @@ export class ChatGPTWebSession {
     await composer.press("Enter");
 
     const startedAt = Date.now();
-    let lastText = "";
+    let lastResult = { text: "", files: [] };
+    let lastSnapshot = "";
     let stableSince = Date.now();
 
     while (Date.now() - startedAt < this.timeoutMs) {
@@ -294,10 +432,16 @@ export class ChatGPTWebSession {
 
       if (count > before) {
         const latest = assistantMessages.nth(count - 1);
-        const text = (await latest.innerText().catch(() => "")).trim();
+        const result = await this.extractAssistantTurnData(latest).catch(() => ({
+          text: "",
+          files: []
+        }));
 
-        if (text && text !== lastText) {
-          lastText = text;
+        const snapshot = JSON.stringify(result);
+
+        if ((result.text || result.files.length) && snapshot !== lastSnapshot) {
+          lastResult = result;
+          lastSnapshot = snapshot;
           stableSince = Date.now();
         }
 
@@ -307,15 +451,15 @@ export class ChatGPTWebSession {
           .isVisible()
           .catch(() => false);
 
-        if (lastText && !stopVisible && Date.now() - stableSince > 1200) {
-          return lastText;
+        if ((lastResult.text || lastResult.files.length) && !stopVisible && Date.now() - stableSince > 1200) {
+          return lastResult;
         }
       }
 
       await sleep(350);
     }
 
-    if (lastText) return lastText;
+    if (lastResult.text || lastResult.files.length) return lastResult;
     throw new Error("Timed out waiting for a ChatGPT response.");
   }
 
@@ -346,9 +490,9 @@ export class ChatGPTWebSession {
       }
 
       try {
-        const output = await this.sendPrompt(prompt);
-        this.recordMessage("assistant", output);
-        return output;
+        const result = await this.sendPrompt(prompt);
+        this.recordMessage("assistant", this.assistantResultToHistoryText(result));
+        return result;
       } catch (error) {
         if (error?.code !== "conversation_limit" || !autoRollover) {
           throw error;
@@ -358,9 +502,9 @@ export class ChatGPTWebSession {
         await this.newChat();
 
         const rolloverPrompt = this.buildRolloverPrompt(messages);
-        const output = await this.sendPrompt(rolloverPrompt);
-        this.recordMessage("assistant", output);
-        return output;
+        const result = await this.sendPrompt(rolloverPrompt);
+        this.recordMessage("assistant", this.assistantResultToHistoryText(result));
+        return result;
       }
     };
 
