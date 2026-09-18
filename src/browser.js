@@ -58,11 +58,64 @@ export class ChatGPTWebSession {
     }
   }
 
+  async getAuthState() {
+    await this.start();
+
+    try {
+      const state = await this.page.evaluate(async () => {
+        const response = await fetch("/api/auth/session", {
+          credentials: "include",
+          cache: "no-store"
+        });
+
+        const text = await response.text();
+        let data = {};
+
+        try {
+          data = JSON.parse(text);
+        } catch {}
+
+        return {
+          ok: response.ok,
+          status: response.status,
+          user: data?.user || null,
+          expires: data?.expires || null
+        };
+      });
+
+      return {
+        authenticated: Boolean(state?.user),
+        user: state?.user || null,
+        expires: state?.expires || null,
+        sessionEndpointStatus: state?.status ?? null
+      };
+    } catch {
+      return {
+        authenticated: false,
+        user: null,
+        expires: null,
+        sessionEndpointStatus: null
+      };
+    }
+  }
+
   async getStatus() {
     await this.start();
-    const composer = await this.findComposer({ timeout: 3000 }).catch(() => null);
+
+    const [composer, auth] = await Promise.all([
+      this.findComposer({ timeout: 3000 }).catch(() => null),
+      this.getAuthState()
+    ]);
+
     return {
-      ready: Boolean(composer),
+      ready: Boolean(composer) && auth.authenticated,
+      authenticated: auth.authenticated,
+      user: auth.user
+        ? {
+            name: auth.user.name || null,
+            email: auth.user.email || null
+          }
+        : null,
       url: this.page.url(),
       conversationActive: this.isConversationPage(),
       rollovers: this.rollovers,
@@ -182,6 +235,16 @@ export class ChatGPTWebSession {
   }
 
   async sendPrompt(prompt) {
+    const auth = await this.getAuthState();
+
+    if (!auth.authenticated) {
+      const error = new Error(
+        "ChatGPT is not authenticated in the Playwright browser. Open /login and sign in there before using /v1."
+      );
+      error.code = "not_authenticated";
+      throw error;
+    }
+
     const limitBeforeSend = await this.getConversationLimitMessage();
     if (limitBeforeSend) {
       throw new ConversationLimitError(limitBeforeSend);
