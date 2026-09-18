@@ -438,6 +438,14 @@ export class ChatGPTWebSession {
     ).catch(() => []));
   }
 
+  assistantTurnLocator() {
+    // Current ChatGPT image/file responses are rendered at the conversation-turn level and may
+    // not contain a nested data-message-author-role="assistant" element.
+    return this.page.locator(
+      '[data-testid^="conversation-turn-"][data-turn="assistant"]'
+    );
+  }
+
   createNetworkCapture() {
     const captured = new Map();
 
@@ -715,7 +723,7 @@ export class ChatGPTWebSession {
       throw new ConversationLimitError(limitBeforeSend);
     }
 
-    const beforeAssistantCount = await this.page.locator('[data-message-author-role="assistant"]').count();
+    const beforeAssistantCount = await this.assistantTurnLocator().count();
     const beforeMediaUrls = await this.snapshotMediaUrls();
     const networkCapture = this.createNetworkCapture();
 
@@ -739,7 +747,7 @@ export class ChatGPTWebSession {
           throw new ConversationLimitError(conversationLimit);
         }
 
-        const assistantMessages = this.page.locator('[data-message-author-role="assistant"]');
+        const assistantMessages = this.assistantTurnLocator();
         const count = await assistantMessages.count();
 
         if (count > beforeAssistantCount) {
@@ -787,7 +795,7 @@ export class ChatGPTWebSession {
       }
 
       if (lastResult.text || lastResult.files.length) {
-        const assistantMessages = this.page.locator('[data-message-author-role="assistant"]');
+        const assistantMessages = this.assistantTurnLocator();
         const count = await assistantMessages.count();
 
         if (count > beforeAssistantCount) {
