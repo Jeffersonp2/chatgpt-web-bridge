@@ -24,6 +24,7 @@ export class ChatGPTWebSession {
     this.queue = Promise.resolve();
     this.rollovers = 0;
     this.bridgeHistory = [];
+    this.lastConversationUrl = null;
   }
 
   async start() {
@@ -147,19 +148,53 @@ export class ChatGPTWebSession {
     const selectors = [
       "#prompt-textarea",
       '[data-testid="prompt-textarea"]',
-      'div[contenteditable="true"][role="textbox"]'
+      'div[contenteditable="true"][role="textbox"]',
+      'textarea[placeholder*="Message"]',
+      'textarea[placeholder*="Mensagem"]'
     ];
 
-    for (const selector of selectors) {
-      const locator = this.page.locator(selector).first();
-      try {
-        await locator.waitFor({ state: "visible", timeout });
-        return locator;
-      } catch {}
+    const tryFind = async (totalTimeout) => {
+      const perSelector = Math.max(700, Math.floor(totalTimeout / selectors.length));
+
+      for (const selector of selectors) {
+        const locator = this.page.locator(selector).first();
+        try {
+          await locator.waitFor({ state: "visible", timeout: perSelector });
+
+          if (this.isConversationPage()) {
+            this.lastConversationUrl = this.page.url();
+          }
+
+          return locator;
+        } catch {}
+      }
+
+      return null;
+    };
+
+    let composer = await tryFind(timeout);
+    if (composer) return composer;
+
+    // File previews/modals can temporarily hide the composer. Close overlays first.
+    await this.page.keyboard.press("Escape").catch(() => {});
+    await sleep(300);
+    await this.page.keyboard.press("Escape").catch(() => {});
+    await sleep(500);
+
+    composer = await tryFind(4000);
+    if (composer) return composer;
+
+    // If an earlier file click navigated away from the chat, restore the last known chat.
+    const recoveryUrl = this.lastConversationUrl || CHATGPT_URL;
+    if (this.page.url() !== recoveryUrl) {
+      await this.page.goto(recoveryUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+      await sleep(700);
+      composer = await tryFind(6000);
+      if (composer) return composer;
     }
 
     throw new Error(
-      "ChatGPT composer not found. Open the browser window, sign in to ChatGPT, then retry."
+      "ChatGPT composer not found after automatic recovery. Open the browser window and confirm the ChatGPT chat is available."
     );
   }
 
@@ -744,6 +779,9 @@ export class ChatGPTWebSession {
       clickedLabels.add(clickKey);
 
       const beforeUrls = networkCapture.urls();
+      const returnUrl = this.isConversationPage()
+        ? this.page.url()
+        : this.lastConversationUrl;
 
       try {
         await button.click({ timeout: 2500 });
@@ -755,6 +793,11 @@ export class ChatGPTWebSession {
 
       const afterFiles = networkCapture.files();
       const newFiles = afterFiles.filter((file) => file.url && !beforeUrls.has(file.url));
+
+      if (returnUrl && this.page.url() !== returnUrl) {
+        await this.page.goto(returnUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+        await sleep(500);
+      }
 
       for (const file of newFiles) {
         const cleanedLabel = label
@@ -783,18 +826,33 @@ export class ChatGPTWebSession {
     const globalMedia = await this.collectGlobalMediaFiles(beforeMediaUrls);
     const artifactFiles = this.artifactFilesFromMetadata(direct.artifacts);
 
+    const preliminaryFiles = this.mergeFiles(
+      direct.files,
+      globalMedia,
+      networkCapture.files(),
+      artifactFiles
+    );
+
+    const linkedFiles = preliminaryFiles.filter((file) => file?.url);
+    const artifactCount = artifactFiles.length;
+
     let clickedFiles = [];
-    if (clickDownloads) {
+    const needsDownloadClicks =
+      clickDownloads &&
+      (
+        linkedFiles.length === 0 ||
+        (artifactCount > 0 && linkedFiles.length < artifactCount)
+      );
+
+    if (needsDownloadClicks) {
       clickedFiles = await this.clickDownloadLikeButtons(turnLocator, networkCapture);
       await sleep(500);
     }
 
     const files = this.mergeFiles(
-      direct.files,
-      globalMedia,
-      networkCapture.files(),
+      preliminaryFiles,
       clickedFiles,
-      artifactFiles
+      networkCapture.files()
     );
 
     return {
@@ -825,6 +883,10 @@ export class ChatGPTWebSession {
 
     try {
       const composer = await this.findComposer();
+
+      if (this.isConversationPage()) {
+        this.lastConversationUrl = this.page.url();
+      }
 
       await composer.click();
       await composer.fill(prompt).catch(async () => {
