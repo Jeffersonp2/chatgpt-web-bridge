@@ -88,9 +88,14 @@ app.post("/v1/chat/completions", async (req, res) => {
   }
 
   try {
-    const output = await chatgpt.complete(messages, {
+    const result = await chatgpt.complete(messages, {
       newChat: body.new_chat === true
     });
+
+    const files = Array.isArray(result?.files) ? result.files : [];
+    const outputText = String(result?.text || "").trim() || (
+      files.length ? "File(s) generated successfully." : ""
+    );
 
     const completionId = id();
 
@@ -104,8 +109,18 @@ app.post("/v1/chat/completions", async (req, res) => {
         object: "chat.completion.chunk",
         created: unix(),
         model,
-        choices: [{ index: 0, delta: { role: "assistant", content: output }, finish_reason: null }]
+        choices: [{ index: 0, delta: { role: "assistant", content: outputText }, finish_reason: null }]
       })}\n\n`);
+      if (files.length) {
+        res.write(`data: ${JSON.stringify({
+          id: completionId,
+          object: "chat.completion.chunk",
+          created: unix(),
+          model,
+          files
+        })}\n\n`);
+      }
+
       res.write(`data: ${JSON.stringify({
         id: completionId,
         object: "chat.completion.chunk",
@@ -125,10 +140,11 @@ app.post("/v1/chat/completions", async (req, res) => {
       choices: [
         {
           index: 0,
-          message: { role: "assistant", content: output },
+          message: { role: "assistant", content: outputText },
           finish_reason: "stop"
         }
       ],
+      files,
       usage: null
     });
   } catch (error) {
@@ -154,7 +170,12 @@ app.post("/v1/responses", async (req, res) => {
     : [{ role: "user", content: typeof input === "string" ? input : JSON.stringify(input ?? "") }];
 
   try {
-    const output = await chatgpt.complete(messages, { newChat: body.new_chat === true });
+    const result = await chatgpt.complete(messages, { newChat: body.new_chat === true });
+    const files = Array.isArray(result?.files) ? result.files : [];
+    const outputText = String(result?.text || "").trim() || (
+      files.length ? "File(s) generated successfully." : ""
+    );
+
     res.json({
       id: `resp_${crypto.randomUUID().replaceAll("-", "")}`,
       object: "response",
@@ -165,10 +186,11 @@ app.post("/v1/responses", async (req, res) => {
         {
           type: "message",
           role: "assistant",
-          content: [{ type: "output_text", text: output }]
+          content: [{ type: "output_text", text: outputText }]
         }
       ],
-      output_text: output
+      output_text: outputText,
+      files
     });
   } catch (error) {
     const status = error?.code === "not_authenticated" ? 401 : 502;
@@ -180,13 +202,45 @@ app.post("/v1/responses", async (req, res) => {
   }
 });
 
-app.post("/v1/images/generations", (_req, res) => {
-  res.status(501).json({
-    error: {
-      type: "not_implemented",
-      message: "Image generation through the ChatGPT Web adapter is planned but not implemented yet."
-    }
-  });
+app.post("/v1/images/generations", async (req, res) => {
+  const body = req.body || {};
+  const prompt = String(body.prompt || "").trim();
+
+  if (!prompt) {
+    return res.status(400).json({
+      error: { message: "prompt is required", type: "invalid_request_error" }
+    });
+  }
+
+  try {
+    const result = await chatgpt.complete(
+      [{ role: "user", content: prompt }],
+      { newChat: body.new_chat === true }
+    );
+
+    const files = Array.isArray(result?.files)
+      ? result.files.filter((file) => file.kind === "image")
+      : [];
+
+    res.json({
+      created: unix(),
+      data: files.map((file) => ({
+        url: file.url,
+        file_id: file.file_id,
+        name: file.name,
+        mime_type: file.mime_type
+      })),
+      files,
+      text: String(result?.text || "")
+    });
+  } catch (error) {
+    const status = error?.code === "not_authenticated" ? 401 : 502;
+    const type = error?.code === "not_authenticated"
+      ? "authentication_error"
+      : "chatgpt_web_error";
+
+    res.status(status).json({ error: { message: error.message, type } });
+  }
 });
 
 const server = app.listen(PORT, HOST, async () => {
