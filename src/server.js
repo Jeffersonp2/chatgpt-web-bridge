@@ -129,10 +129,15 @@ app.post("/v1/chat/completions", async (req, res) => {
       usage: null
     });
   } catch (error) {
-    res.status(502).json({
+    const status = error?.code === "not_authenticated" ? 401 : 502;
+    const type = error?.code === "not_authenticated"
+      ? "authentication_error"
+      : "chatgpt_web_error";
+
+    res.status(status).json({
       error: {
         message: error.message,
-        type: "chatgpt_web_error"
+        type
       }
     });
   }
@@ -163,7 +168,12 @@ app.post("/v1/responses", async (req, res) => {
       output_text: output
     });
   } catch (error) {
-    res.status(502).json({ error: { message: error.message, type: "chatgpt_web_error" } });
+    const status = error?.code === "not_authenticated" ? 401 : 502;
+    const type = error?.code === "not_authenticated"
+      ? "authentication_error"
+      : "chatgpt_web_error";
+
+    res.status(status).json({ error: { message: error.message, type } });
   }
 });
 
