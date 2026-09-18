@@ -154,6 +154,44 @@ http://127.0.0.1:4310/health
 
 ---
 
+## 🔄 Continuidade da conversa
+
+Por padrão, o bridge **não abre um chat novo a cada requisição**.
+
+O comportamento é:
+
+```text
+primeira mensagem
+      ↓
+abre/usa um chat normal
+      ↓
+segunda mensagem
+      ↓
+continua no MESMO chat
+      ↓
+terceira mensagem
+      ↓
+continua no MESMO chat
+      ↓
+limite específico daquela conversa detectado
+      ↓
+abre automaticamente outro chat normal
+      ↓
+reenvia o contexto disponível e continua
+```
+
+Isso não usa Chat Temporário.
+
+Se você quiser forçar manualmente uma conversa nova, envie `new_chat: true` na requisição ou chame:
+
+```text
+POST http://127.0.0.1:4310/v1/conversation/new
+```
+
+O rollover automático é feito somente para sinais de **limite daquela conversa**. Limites gerais da conta ou do modelo não são tratados como motivo para abrir chats em loop.
+
+---
+
 ## 💬 Exemplo — Chat Completions
 
 ### PowerShell
@@ -281,7 +319,7 @@ As variáveis disponíveis estão em `.env.example`.
 ### v0.2
 - [ ] Captura incremental para streaming real
 - [ ] Seleção do modelo/modo disponível no ChatGPT
-- [ ] Conversas persistentes opcionais
+- [x] Conversa persistente por padrão\n- [x] Rollover automático para um novo chat normal ao atingir limite da conversa
 - [ ] Entrada de imagens
 - [ ] Melhor detecção de término da resposta
 
