@@ -42,13 +42,7 @@ const contextualFileMessage = (files = []) => {
   const name = firstLinked?.name ? `\nArquivo: ${firstLinked.name}` : "";
   const url = firstLinked?.url ? `\nURL: ${firstLinked.url}` : "";
 
-  return [
-    title + name + url,
-    "",
-    "PowerShell:",
-    "$url = $r.url",
-    "$url"
-  ].join("\n");
+  return title + name + url;
 };
 
 app.get("/", (_req, res) => {
@@ -127,7 +121,9 @@ app.post("/v1/chat/completions", async (req, res) => {
     });
 
     const files = Array.isArray(result?.files) ? result.files : [];
-    const outputText = String(result?.text || "").trim() || contextualFileMessage(files);
+    const baseText = String(result?.text || "").trim();
+    const fileContext = contextualFileMessage(files);
+    const outputText = [baseText, fileContext].filter(Boolean).join("\n\n");
 
     const completionId = id();
 
@@ -205,7 +201,9 @@ app.post("/v1/responses", async (req, res) => {
   try {
     const result = await chatgpt.complete(messages, { newChat: body.new_chat === true });
     const files = Array.isArray(result?.files) ? result.files : [];
-    const outputText = String(result?.text || "").trim() || contextualFileMessage(files);
+    const baseText = String(result?.text || "").trim();
+    const fileContext = contextualFileMessage(files);
+    const outputText = [baseText, fileContext].filter(Boolean).join("\n\n");
 
     res.json({
       id: `resp_${crypto.randomUUID().replaceAll("-", "")}`,
@@ -264,7 +262,10 @@ app.post("/v1/images/generations", async (req, res) => {
       })),
       files,
       url: files.find((file) => file?.url)?.url || null,
-      text: String(result?.text || "")
+      text: [
+        String(result?.text || "").trim(),
+        contextualFileMessage(files)
+      ].filter(Boolean).join("\n\n")
     });
   } catch (error) {
     const status = error?.code === "not_authenticated" ? 401 : 502;
