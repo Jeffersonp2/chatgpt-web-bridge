@@ -25,30 +25,145 @@ export class ChatGPTWebSession {
     this.rollovers = 0;
     this.bridgeHistory = [];
     this.lastConversationUrl = null;
+    this.startPromise = null;
+    this.relaunchTimer = null;
+    this.stopping = false;
+  }
+
+  configurePage(page) {
+    if (!page) return;
+
+    page.setDefaultTimeout(30000);
+
+    page.on("close", () => {
+      if (this.page === page) {
+        this.page = null;
+      }
+
+      if (!this.stopping) {
+        this.scheduleBrowserRecovery();
+      }
+    });
+  }
+
+  scheduleBrowserRecovery() {
+    if (this.stopping || this.relaunchTimer) return;
+
+    this.relaunchTimer = setTimeout(() => {
+      this.relaunchTimer = null;
+
+      this.start().catch((error) => {
+        console.error("Could not automatically recover ChatGPT browser:", error.message);
+        this.scheduleBrowserRecovery();
+      });
+    }, 1000);
   }
 
   async start() {
-    if (this.context) return;
+    if (this.startPromise) {
+      await this.startPromise;
+      return;
+    }
 
-    this.context = await chromium.launchPersistentContext(this.profileDir, {
-      headless: this.headless,
-      viewport: { width: 1440, height: 980 },
-      args: ["--disable-blink-features=AutomationControlled"]
-    });
+    this.startPromise = (async () => {
+      this.stopping = false;
 
-    const pages = this.context.pages();
-    this.page = pages[0] || await this.context.newPage();
-    this.page.setDefaultTimeout(30000);
+      if (this.context) {
+        try {
+          const pages = this.context.pages().filter((page) => !page.isClosed());
 
-    if (!this.page.url().startsWith("https://chatgpt.com")) {
-      await this.page.goto(CHATGPT_URL, { waitUntil: "domcontentloaded" });
+          if (!this.page || this.page.isClosed()) {
+            this.page =
+              pages.find((page) => page.url().startsWith("https://chatgpt.com")) ||
+              pages[0] ||
+              await this.context.newPage();
+
+            this.configurePage(this.page);
+          }
+
+          if (this.page && !this.page.isClosed()) {
+            return;
+          }
+        } catch {
+          this.context = null;
+          this.page = null;
+        }
+      }
+
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const context = await chromium.launchPersistentContext(this.profileDir, {
+            headless: this.headless,
+            viewport: { width: 1440, height: 980 },
+            args: ["--disable-blink-features=AutomationControlled"]
+          });
+
+          this.context = context;
+
+          context.on("close", () => {
+            if (this.context === context) {
+              this.context = null;
+              this.page = null;
+            }
+
+            if (!this.stopping) {
+              this.scheduleBrowserRecovery();
+            }
+          });
+
+          for (const existingPage of context.pages()) {
+            this.configurePage(existingPage);
+          }
+
+          const pages = context.pages().filter((page) => !page.isClosed());
+          this.page =
+            pages.find((page) => page.url().startsWith("https://chatgpt.com")) ||
+            pages[0] ||
+            await context.newPage();
+
+          this.configurePage(this.page);
+
+          if (!this.page.url().startsWith("https://chatgpt.com")) {
+            await this.page.goto(CHATGPT_URL, { waitUntil: "domcontentloaded" });
+          }
+
+          return;
+        } catch (error) {
+          lastError = error;
+          this.context = null;
+          this.page = null;
+
+          if (attempt < 3) {
+            await sleep(1200);
+          }
+        }
+      }
+
+      throw lastError || new Error("Could not start ChatGPT browser.");
+    })();
+
+    try {
+      await this.startPromise;
+    } finally {
+      this.startPromise = null;
     }
   }
 
   async stop() {
-    await this.context?.close();
+    this.stopping = true;
+
+    if (this.relaunchTimer) {
+      clearTimeout(this.relaunchTimer);
+      this.relaunchTimer = null;
+    }
+
+    const context = this.context;
     this.context = null;
     this.page = null;
+
+    await context?.close().catch(() => {});
   }
 
   async openLoginIfNeeded() {
