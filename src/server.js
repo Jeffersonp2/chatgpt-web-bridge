@@ -20,12 +20,14 @@ const unix = () => Math.floor(Date.now() / 1000);
 const contextualFileMessage = (files = []) => {
   if (!files.length) return "";
 
-  const kinds = new Set(files.map((file) => file?.kind).filter(Boolean));
+  const usableFiles = files.filter((file) => file?.url);
+  const displayFiles = usableFiles.length ? usableFiles : files;
+  const kinds = new Set(displayFiles.map((file) => file?.kind).filter(Boolean));
 
   let title = "Arquivo gerado com sucesso.";
 
-  if (files.length > 1) {
-    title = `${files.length} arquivos gerados com sucesso.`;
+  if (displayFiles.length > 1) {
+    title = `${displayFiles.length} arquivos gerados com sucesso.`;
   } else if (kinds.has("image")) {
     title = "Imagem gerada com sucesso.";
   } else if (kinds.has("video")) {
@@ -38,13 +40,12 @@ const contextualFileMessage = (files = []) => {
     title = "Arquivo de código gerado com sucesso.";
   }
 
-  const firstLinked = files.find((file) => file?.url) || files[0];
-  const name = firstLinked?.name ? `\nArquivo: ${firstLinked.name}` : "";
-  const url = firstLinked?.url ? `\nURL: ${firstLinked.url}` : "";
+  const first = displayFiles[0];
+  const name = first?.name ? `\nArquivo: ${first.name}` : "";
+  const url = first?.url ? `\nURL: ${first.url}` : "";
 
   return title + name + url;
-};
-
+}
 app.get("/", (_req, res) => {
   res.json({
     name: "testeGPT Local Bridge",
