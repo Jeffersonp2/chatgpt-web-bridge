@@ -785,7 +785,7 @@ export class ChatGPTWebSession {
         : this.lastConversationUrl;
 
       const downloadPromise = this.page
-        .waitForEvent("download", { timeout: 6000 })
+        .waitForEvent("download", { timeout: 12000 })
         .catch(() => null);
 
       let clicked = false;
@@ -805,23 +805,26 @@ export class ChatGPTWebSession {
       if (!clicked) continue;
 
       const download = await downloadPromise;
-      await sleep(500);
+      await sleep(1200);
 
       if (download) {
         try {
           const downloadUrl = download.url();
           const suggestedName = download.suggestedFilename();
 
-          if (
-            downloadUrl &&
-            /^https?:/i.test(downloadUrl) &&
-            this.isLikelyFileUrl(downloadUrl)
-          ) {
+          if (downloadUrl && /^https?:/i.test(downloadUrl)) {
+            const resolvedName = suggestedName || info.artifactName || null;
+            const resolvedMime = this.mimeTypeFromName(
+              resolvedName || "",
+              downloadUrl
+            );
+
             discovered.push(this.candidateFromUrl(downloadUrl, {
-              name: suggestedName || info.artifactName || null,
-              mime_type: this.mimeTypeFromName(
-                suggestedName || info.artifactName || "",
-                downloadUrl
+              name: resolvedName,
+              mime_type: resolvedMime,
+              kind: this.kindFromMime(
+                resolvedMime,
+                resolvedName || ""
               ),
               source: "playwright-download"
             }));
