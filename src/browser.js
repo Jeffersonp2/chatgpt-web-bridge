@@ -369,7 +369,8 @@ export class ChatGPTWebSession {
       file.url ? 1 : 0,
       file.file_id ? 1 : 0,
       file.name ? 1 : 0,
-      file.mime_type ? 1 : 0
+      file.mime_type ? 1 : 0,
+      file.kind && file.kind !== "file" ? 1 : 0
     ].reduce((sum, value) => sum + value, 0);
 
     for (const group of groups) {
@@ -412,7 +413,7 @@ export class ChatGPTWebSession {
             ...existing,
             name: existing.name || file.name,
             mime_type: existing.mime_type || file.mime_type,
-            kind: existing.kind || file.kind,
+            kind: existing.kind && existing.kind !== "file" ? existing.kind : file.kind,
             file_id: existing.file_id || file.file_id,
             url: existing.url || file.url
           };
@@ -537,9 +538,16 @@ export class ChatGPTWebSession {
           el.getAttribute("aria-label") ||
           null;
 
+        const tagName = el.tagName.toLowerCase();
         files.push({
           name,
           url,
+          kind: tagName === "img"
+            ? "image"
+            : (tagName === "video" || tagName === "source" ? "video" : undefined),
+          mime_type: tagName === "img"
+            ? "image/*"
+            : (tagName === "video" || tagName === "source" ? "video/*" : undefined),
           source: "assistant-dom"
         });
       }
