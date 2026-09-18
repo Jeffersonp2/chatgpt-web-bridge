@@ -124,15 +124,15 @@ http://127.0.0.1:4310/v1
 
 ## 🔐 Primeiro login
 
-Com o servidor rodando, abra:
+Ao executar:
 
-```text
-http://127.0.0.1:4310/login
+```bash
+npm start
 ```
 
-Uma janela do navegador será aberta.
+o **Chrome for Testing abre automaticamente**.
 
-Faça login normalmente no ChatGPT. Você pode selecionar:
+Se ainda não existir uma sessão autenticada, ele vai direto para a tela de login do ChatGPT. Faça login normalmente e, se quiser, selecione:
 
 ```text
 Continuar com Google
