@@ -609,14 +609,26 @@ export class ChatGPTWebSession {
       const info = await button.evaluate((el) => {
         const text = (el.textContent || "").trim();
         const aria = (el.getAttribute("aria-label") || "").trim();
-        const inArtifactRow = Boolean(el.closest('[class*="group/artifact-row"]'));
-        return { text, aria, inArtifactRow };
+        const artifactRow = el.closest('[class*="group/artifact-row"]');
+        const artifactName = artifactRow
+          ? [...artifactRow.querySelectorAll("button[aria-label]")]
+              .map((candidate) => (candidate.getAttribute("aria-label") || "").trim())
+              .find((candidate) => candidate && !/^(baixar arquivo|download file)$/i.test(candidate)) || null
+          : null;
+
+        return {
+          text,
+          aria,
+          inArtifactRow: Boolean(artifactRow),
+          artifactName
+        };
       }).catch(() => null);
 
       if (!info) continue;
 
       const label = info.aria || info.text;
-      if (!label || clickedLabels.has(label)) continue;
+      const clickKey = `${index}:${info.artifactName || ""}:${label}`;
+      if (!label || clickedLabels.has(clickKey)) continue;
 
       const explicitDownload = /(baixar|download)/i.test(label);
       const looksLikeFileButton =
@@ -625,7 +637,7 @@ export class ChatGPTWebSession {
 
       if (!explicitDownload && !looksLikeFileButton) continue;
 
-      clickedLabels.add(label);
+      clickedLabels.add(clickKey);
 
       const beforeUrls = networkCapture.urls();
 
@@ -648,7 +660,7 @@ export class ChatGPTWebSession {
 
         discovered.push({
           ...file,
-          name: file.name || cleanedLabel || null,
+          name: file.name || info.artifactName || cleanedLabel || null,
           source: "download-button"
         });
       }
