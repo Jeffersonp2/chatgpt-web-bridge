@@ -22,6 +22,7 @@ export class ChatGPTWebSession {
     this.page = null;
     this.queue = Promise.resolve();
     this.rollovers = 0;
+    this.bridgeHistory = [];
   }
 
   async start() {
@@ -123,8 +124,33 @@ export class ChatGPTWebSession {
     return this.messageText(meaningful);
   }
 
+  sameMessage(a, b) {
+    return String(a?.role || "") === String(b?.role || "") &&
+      this.messageText(a).trim() === this.messageText(b).trim();
+  }
+
+  seedHistory(messages = []) {
+    this.bridgeHistory = messages
+      .filter((message) => this.messageText(message).trim())
+      .map((message) => ({
+        role: String(message.role || "user"),
+        content: this.messageText(message)
+      }));
+  }
+
+  recordMessage(role, content) {
+    const message = { role, content: String(content || "") };
+    if (!message.content.trim()) return;
+
+    const last = this.bridgeHistory[this.bridgeHistory.length - 1];
+    if (!this.sameMessage(last, message)) {
+      this.bridgeHistory.push(message);
+    }
+  }
+
   buildRolloverPrompt(messages = []) {
-    const history = this.buildPrompt(messages);
+    const historySource = this.bridgeHistory.length ? this.bridgeHistory : messages;
+    const history = this.buildPrompt(historySource);
     return [
       "Continue the same conversation in this new normal ChatGPT chat.",
       "The previous chat reached its conversation-specific limit.",
@@ -220,6 +246,9 @@ export class ChatGPTWebSession {
 
       if (forceNewChat) {
         await this.newChat();
+        this.seedHistory(messages);
+      } else if (!hadConversation || this.bridgeHistory.length === 0) {
+        this.seedHistory(messages);
       }
 
       const shouldSendFullContext = forceNewChat || !hadConversation;
@@ -229,8 +258,14 @@ export class ChatGPTWebSession {
 
       if (!prompt.trim()) throw new Error("No text input was provided.");
 
+      if (!shouldSendFullContext) {
+        this.recordMessage("user", prompt);
+      }
+
       try {
-        return await this.sendPrompt(prompt);
+        const output = await this.sendPrompt(prompt);
+        this.recordMessage("assistant", output);
+        return output;
       } catch (error) {
         if (error?.code !== "conversation_limit" || !autoRollover) {
           throw error;
@@ -240,7 +275,9 @@ export class ChatGPTWebSession {
         await this.newChat();
 
         const rolloverPrompt = this.buildRolloverPrompt(messages);
-        return await this.sendPrompt(rolloverPrompt);
+        const output = await this.sendPrompt(rolloverPrompt);
+        this.recordMessage("assistant", output);
+        return output;
       }
     };
 
