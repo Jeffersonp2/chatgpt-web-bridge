@@ -365,7 +365,19 @@ export class ChatGPTWebSession {
     const result = [];
     const seen = new Map();
 
-    const score = (file) => [
+    const urlScore = (url, kind) => {
+      const value = String(url || "").toLowerCase();
+      if (!value) return 0;
+      if (value.includes("/backend-api/estuary/content")) {
+        return kind === "image" || kind === "video" ? 100 : 85;
+      }
+      if (value.includes("/backend-api/files/download/file_")) return 95;
+      if (value.includes("/backend-api/files/file_")) return 60;
+      if (value.includes("oaiusercontent.com")) return 80;
+      return 10;
+    };
+
+    const richness = (file) => [
       file.url ? 1 : 0,
       file.file_id ? 1 : 0,
       file.name ? 1 : 0,
@@ -373,62 +385,123 @@ export class ChatGPTWebSession {
       file.kind && file.kind !== "file" ? 1 : 0
     ].reduce((sum, value) => sum + value, 0);
 
+    const normalize = (raw) => {
+      if (!raw) return null;
+
+      if (raw.url) return this.candidateFromUrl(raw.url, raw);
+
+      const mimeType = raw.mime_type || this.mimeTypeFromName(
+        raw.name || "",
+        "",
+        raw.icon_key || ""
+      );
+
+      return {
+        name: raw.name || null,
+        mime_type: mimeType,
+        kind: raw.kind || this.kindFromMime(
+          mimeType,
+          raw.name || "",
+          raw.icon_key || ""
+        ),
+        file_id: raw.file_id || null,
+        url: null,
+        ...(raw.source ? { source: raw.source } : {})
+      };
+    };
+
+    const mergePair = (existing, incoming) => {
+      const existingUrlScore = urlScore(existing.url, existing.kind);
+      const incomingUrlScore = urlScore(incoming.url, incoming.kind);
+      const bestUrl = incomingUrlScore > existingUrlScore
+        ? incoming.url
+        : (existing.url || incoming.url);
+
+      const bestSource = incomingUrlScore > existingUrlScore
+        ? incoming.source
+        : (existing.source || incoming.source);
+
+      const preferredKind =
+        existing.kind && existing.kind !== "file"
+          ? existing.kind
+          : incoming.kind;
+
+      const preferredMime =
+        existing.mime_type && existing.mime_type !== "application/json"
+          ? existing.mime_type
+          : incoming.mime_type;
+
+      const better = richness(incoming) > richness(existing) ? incoming : existing;
+      const other = better === incoming ? existing : incoming;
+
+      return {
+        ...other,
+        ...better,
+        name: (
+          existing.name && !/^file_[a-z0-9]+$/i.test(existing.name)
+            ? existing.name
+            : null
+        ) || (
+          incoming.name && !/^file_[a-z0-9]+$/i.test(incoming.name)
+            ? incoming.name
+            : null
+        ) || existing.name || incoming.name || null,
+        mime_type: preferredMime || existing.mime_type || incoming.mime_type || null,
+        kind: preferredKind || existing.kind || incoming.kind || "file",
+        file_id: existing.file_id || incoming.file_id || null,
+        url: bestUrl || null,
+        ...(bestSource ? { source: bestSource } : {})
+      };
+    };
+
     for (const group of groups) {
       for (const raw of Array.isArray(group) ? group : []) {
-        if (!raw) continue;
+        const file = normalize(raw);
+        if (!file) continue;
 
-        const file = raw.url
-          ? this.candidateFromUrl(raw.url, raw)
-          : {
-              name: raw.name || null,
-              mime_type: raw.mime_type || this.mimeTypeFromName(raw.name || "", "", raw.icon_key || ""),
-              kind: raw.kind || this.kindFromMime(
-                raw.mime_type || this.mimeTypeFromName(raw.name || "", "", raw.icon_key || ""),
-                raw.name || "",
-                raw.icon_key || ""
-              ),
-              file_id: raw.file_id || null,
-              url: null,
-              ...(raw.source ? { source: raw.source } : {})
-            };
+        // Prefer file_id as the identity so estuary/download/simple URLs for the same file
+        // collapse into one API entry.
+        const key = file.file_id
+          ? `id:${file.file_id}`
+          : file.url
+            ? `url:${file.url}`
+            : file.name
+              ? `name:${String(file.name).toLowerCase()}`
+              : null;
 
-        const key = file.url || file.file_id || (
-          file.name ? `name:${String(file.name).toLowerCase()}` : null
-        );
         if (!key) continue;
 
         const existingIndex = seen.get(key);
         if (existingIndex === undefined) {
           seen.set(key, result.length);
           result.push(file);
-          continue;
-        }
-
-        const existing = result[existingIndex];
-        if (score(file) > score(existing)) {
-          result[existingIndex] = { ...existing, ...file };
         } else {
-          result[existingIndex] = {
-            ...file,
-            ...existing,
-            name: existing.name || file.name,
-            mime_type: existing.mime_type || file.mime_type,
-            kind: existing.kind && existing.kind !== "file" ? existing.kind : file.kind,
-            file_id: existing.file_id || file.file_id,
-            url: existing.url || file.url
-          };
+          result[existingIndex] = mergePair(result[existingIndex], file);
         }
       }
     }
 
-    return result;
+    // If a metadata-only artifact has the same name as a linked result, keep the linked one.
+    const linkedNames = new Set(
+      result
+        .filter((file) => file.url && file.name)
+        .map((file) => String(file.name).toLowerCase())
+    );
+
+    return result.filter((file) =>
+      file.url || !file.name || !linkedNames.has(String(file.name).toLowerCase())
+    );
   }
 
   isLikelyFileUrl(url) {
     const value = String(url || "").toLowerCase();
+
+    // Keep only URLs that look like ChatGPT-generated/user files. Do not treat normal
+    // application assets (.js, .css, favicon, sentinel frames, etc.) as generated files.
     return value.includes("/backend-api/estuary/content") ||
-      value.includes("file_") ||
-      /\.(png|jpe?g|gif|webp|svg|bmp|mp4|webm|mov|mkv|avi|zip|rar|7z|pdf|txt|csv|json|html?|css|m?js|py|bat|xlsx?|docx?|pptx?)(?:\?|$)/i.test(value);
+      value.includes("/backend-api/files/download/file_") ||
+      value.includes("/backend-api/files/file_") ||
+      (value.includes("oaiusercontent.com") && /\.(png|jpe?g|gif|webp|mp4|webm|mov|zip|rar|7z|pdf|txt|csv|json|html?|css|m?js|py|bat|xlsx?|docx?|pptx?)(?:\?|$)/i.test(value));
   }
 
   async snapshotMediaUrls() {
@@ -570,8 +643,23 @@ export class ChatGPTWebSession {
         };
       });
 
+      const markdownText = [...node.querySelectorAll(".markdown")]
+        .map((el) => (el.innerText || "").trim())
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+
+      const assistantMessage = node.querySelector('[data-message-author-role="assistant"]');
+      const fallbackText = assistantMessage
+        ? [...assistantMessage.querySelectorAll(".markdown")]
+            .map((el) => (el.innerText || "").trim())
+            .filter(Boolean)
+            .join("\n")
+            .trim()
+        : "";
+
       return {
-        text: (node.innerText || "").trim(),
+        text: markdownText || fallbackText,
         files,
         artifacts
       };
