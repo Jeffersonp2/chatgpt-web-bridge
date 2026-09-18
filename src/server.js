@@ -36,10 +36,13 @@ app.get("/health", async (_req, res) => {
 
 app.get("/login", async (_req, res) => {
   try {
-    await chatgpt.start();
+    const state = await chatgpt.openLoginIfNeeded();
     res.json({
       ok: true,
-      message: "Browser opened. Sign in to ChatGPT there; the local profile will be reused."
+      authenticated: state.authenticated,
+      message: state.authenticated
+        ? "ChatGPT is already authenticated."
+        : "ChatGPT login window opened automatically."
     });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -188,7 +191,18 @@ app.post("/v1/images/generations", (_req, res) => {
 
 const server = app.listen(PORT, HOST, async () => {
   console.log(`testeGPT listening on http://${HOST}:${PORT}`);
-  console.log(`Open http://${HOST}:${PORT}/login once to authenticate ChatGPT.`);
+
+  try {
+    const state = await chatgpt.openLoginIfNeeded();
+
+    if (state.authenticated) {
+      console.log("ChatGPT session already authenticated.");
+    } else {
+      console.log("ChatGPT login window opened automatically.");
+    }
+  } catch (error) {
+    console.error("Could not open the ChatGPT login window:", error.message);
+  }
 });
 
 const shutdown = async () => {
