@@ -38,9 +38,9 @@ const contextualFileMessage = (files = []) => {
     title = "Arquivo de código gerado com sucesso.";
   }
 
-  const first = files[0];
-  const name = first?.name ? `\nArquivo: ${first.name}` : "";
-  const url = first?.url ? `\nURL: ${first.url}` : "";
+  const firstLinked = files.find((file) => file?.url) || files[0];
+  const name = firstLinked?.name ? `\nArquivo: ${firstLinked.name}` : "";
+  const url = firstLinked?.url ? `\nURL: ${firstLinked.url}` : "";
 
   return [
     title + name + url,
@@ -177,7 +177,7 @@ app.post("/v1/chat/completions", async (req, res) => {
         }
       ],
       files,
-      url: files[0]?.url || null,
+      url: files.find((file) => file?.url)?.url || null,
       usage: null
     });
   } catch (error) {
@@ -222,7 +222,7 @@ app.post("/v1/responses", async (req, res) => {
       ],
       output_text: outputText,
       files,
-      url: files[0]?.url || null
+      url: files.find((file) => file?.url)?.url || null
     });
   } catch (error) {
     const status = error?.code === "not_authenticated" ? 401 : 502;
@@ -263,7 +263,7 @@ app.post("/v1/images/generations", async (req, res) => {
         mime_type: file.mime_type
       })),
       files,
-      url: files[0]?.url || null,
+      url: files.find((file) => file?.url)?.url || null,
       text: String(result?.text || "")
     });
   } catch (error) {
