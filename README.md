@@ -503,6 +503,7 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 | `REMOTE_LOGIN_HEIGHT` | `900` | Altura da tela virtual |
 | `REMOTE_LOGIN_USE_EXISTING_DISPLAY` | `false` | Permite reutilizar um display X11 já existente |
 | `REMOTE_BROWSER_CONTROL_ENABLED` | `true` | Ativa o controle remoto do Chromium via Playwright no dashboard (Windows/Linux) |
+| `REMOTE_BROWSER_HIDDEN` | `false` | Executa o Chromium sem janela visível e mantém o controle pelo dashboard |
 
 > Recomenda-se manter `HOST=127.0.0.1`. Não exponha diretamente o bridge na internet sem autenticação, TLS e controles adicionais.
 
@@ -546,6 +547,7 @@ No arquivo `.env`:
 HOST=0.0.0.0
 DASHBOARD_TOKEN=troque-por-um-token-forte
 REMOTE_BROWSER_CONTROL_ENABLED=true
+REMOTE_BROWSER_HIDDEN=true
 CHATGPT_HEADLESS=false
 ```
 
@@ -555,6 +557,30 @@ Depois:
 npm install
 npm start
 ```
+
+#### Rodar sem janela visível
+
+Para deixar o Chromium totalmente oculto no Windows e controlá-lo somente pelo dashboard:
+
+```text
+REMOTE_BROWSER_CONTROL_ENABLED=true
+REMOTE_BROWSER_HIDDEN=true
+REMOTE_LOGIN_ENABLED=false
+```
+
+Nesse modo o Playwright inicia o Chromium em headless. A página continua disponível em:
+
+```text
+/dashboard/browser
+```
+
+com screenshots atualizados, clique, teclado e rolagem.
+
+Se `REMOTE_LOGIN_ENABLED=true` estiver ativo no Linux, o modo VNC tem prioridade e o Chromium continua visível apenas dentro do display virtual Xvfb.
+
+> Alguns provedores de login podem tratar navegadores headless de forma diferente. Se o Google recusar o primeiro login nesse modo, faça o login uma vez com `REMOTE_BROWSER_HIDDEN=false`, confirme que o perfil foi salvo em `.data/chatgpt-profile/` e depois volte para `REMOTE_BROWSER_HIDDEN=true`.
+
+
 
 Abra de outro equipamento:
 
@@ -664,6 +690,7 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 - [x] Dashboard local
 - [x] Login remoto do Chromium pelo dashboard em Linux
 - [x] Controle remoto do Chromium via Playwright em Windows/Linux
+- [x] Chromium oculto/headless com visualização somente pelo dashboard
 
 ### Ainda em estabilização
 
