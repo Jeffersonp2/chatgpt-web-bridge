@@ -8,6 +8,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { ChatGPTWebSession } from "./browser.js";
 import { RemoteLoginManager } from "./remote-login.js";
+import { downloadRemoteAttachment } from "./remote-attachment.js";
 
 const app = express();
 
@@ -671,41 +672,18 @@ const fetchRemoteAttachment = async (url) => {
     throw new Error("Remote URL input is disabled by ALLOW_REMOTE_URL_INPUT=false.");
   }
 
-  const parsed = new URL(url);
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Only http:// and https:// attachment URLs are supported.");
-  }
-
-  if (parsed.username || parsed.password) {
-    throw new Error("Attachment URLs containing embedded credentials are not supported.");
-  }
-
-  const response = await fetch(parsed, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS)
+  const response = await downloadRemoteAttachment(url, {
+    maxBytes: MAX_REMOTE_FILE_BYTES,
+    timeoutMs: REMOTE_FETCH_TIMEOUT_MS
   });
 
-  if (!response.ok) {
-    throw new Error(`Could not fetch attachment URL: HTTP ${response.status}`);
-  }
-
-  const declaredLength = Number(response.headers.get("content-length") || 0);
-  if (declaredLength && declaredLength > MAX_REMOTE_FILE_BYTES) {
-    throw new Error(`Remote attachment exceeds the ${MAX_REMOTE_FILE_BYTES} byte limit.`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_REMOTE_FILE_BYTES) {
-    throw new Error(`Remote attachment exceeds the ${MAX_REMOTE_FILE_BYTES} byte limit.`);
-  }
-
   const mimeType =
-    String(response.headers.get("content-type") || "")
+    String(response.headers["content-type"] || "")
       .split(";")[0]
       .trim() ||
     "application/octet-stream";
 
-  const buffer = Buffer.from(arrayBuffer);
+  const buffer = response.buffer;
 
   return {
     buffer,
@@ -714,7 +692,7 @@ const fetchRemoteAttachment = async (url) => {
     filename: remoteFilename(
       response.url || url,
       mimeType,
-      response.headers.get("content-disposition") || ""
+      response.headers["content-disposition"] || ""
     )
   };
 };

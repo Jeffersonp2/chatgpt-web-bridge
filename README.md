@@ -881,7 +881,7 @@ Imagem:
 }
 ```
 
-Áudio e anexos também podem usar `url`. O bridge baixa o conteúdo, aplica limite/timeout e o envia para o controle de upload do ChatGPT Web.
+Áudio e anexos também podem usar `url`. O bridge aceita destinos HTTP/HTTPS públicos, bloqueia endereços internos ou reservados (inclusive após redirecionamentos), aplica limite de bytes durante o download e envia o conteúdo para o controle de upload do ChatGPT Web. URLs de serviços locais devem ser enviadas como arquivo ou base64.
 
 Variáveis:
 
