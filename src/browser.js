@@ -539,8 +539,13 @@ export class ChatGPTWebSession {
         ogg: "audio/ogg",
         webm: "audio/webm"
       };
+      const audioValue = audio.data || audio.base64 || audio.url;
+      if (typeof audioValue !== "string" || /^https?:\/\//i.test(audioValue)) {
+        return null;
+      }
+
       const decoded = this.decodeAttachmentData(
-        audio.data || audio.base64 || audio.url,
+        audioValue,
         audio.mime_type || audio.mimeType || mimeByFormat[format] || "audio/wav"
       );
       if (!decoded) return null;
@@ -559,7 +564,7 @@ export class ChatGPTWebSession {
         ? image
         : (image.url || image.data || image.base64 || part.image_url);
 
-      if (typeof value !== "string" || !value.startsWith("data:")) {
+      if (typeof value !== "string" || /^https?:\/\//i.test(value)) {
         return null;
       }
 
@@ -584,8 +589,13 @@ export class ChatGPTWebSession {
       part.type === "attachment"
     ) {
       const file = part.file || part.input_file || part.attachment || part;
+      const fileValue = file.data || file.base64 || file.file_data || file.url;
+      if (typeof fileValue !== "string" || /^https?:\/\//i.test(fileValue)) {
+        return null;
+      }
+
       const decoded = this.decodeAttachmentData(
-        file.data || file.base64 || file.file_data || file.url,
+        fileValue,
         file.mime_type || file.mimeType || "application/octet-stream"
       );
       if (!decoded) return null;
