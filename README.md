@@ -475,7 +475,7 @@ local
 
 ## ⚙️ Configuração
 
-As variáveis disponíveis estão em `.env.example`.
+As variáveis disponíveis estão em `.env.example`. O servidor agora carrega automaticamente um arquivo `.env` na raiz do projeto.
 
 | Variável | Padrão | Uso |
 |---|---|---|
@@ -495,8 +495,95 @@ As variáveis disponíveis estão em `.env.example`.
 | `HISTORY_MAX_RECENT_CHARS` | `80000` | Limite aproximado de caracteres no histórico recente |
 | `HISTORY_MESSAGE_CLIP_CHARS` | `1600` | Máximo por mensagem ao compactar histórico antigo |
 | `HISTORY_SUMMARY_MAX_CHARS` | `50000` | Tamanho máximo do resumo acumulado |
+| `DASHBOARD_TOKEN` | vazio | Token para proteger o dashboard quando exposto na rede |
+| `REMOTE_LOGIN_ENABLED` | `false` | Ativa login remoto no Chromium do servidor (Linux) |
+| `REMOTE_LOGIN_DISPLAY` | `:99` | Display virtual X11 usado pelo Xvfb |
+| `REMOTE_LOGIN_RFB_PORT` | `5900` | Porta VNC local, ligada apenas ao loopback |
+| `REMOTE_LOGIN_WIDTH` | `1440` | Largura da tela virtual |
+| `REMOTE_LOGIN_HEIGHT` | `900` | Altura da tela virtual |
+| `REMOTE_LOGIN_USE_EXISTING_DISPLAY` | `false` | Permite reutilizar um display X11 já existente |
 
 > Recomenda-se manter `HOST=127.0.0.1`. Não exponha diretamente o bridge na internet sem autenticação, TLS e controles adicionais.
+
+---
+
+## 🖥️ Login remoto pelo dashboard
+
+Em um servidor Linux sem monitor, o próprio dashboard pode mostrar o **Chromium que está rodando no servidor**. Assim o login do ChatGPT/Google é feito visualmente de outro PC, notebook, celular ou tablet, mas os cookies continuam sendo gravados no perfil local do servidor:
+
+```text
+.data/chatgpt-profile/
+```
+
+O fluxo é:
+
+```text
+outro PC/celular
+      ↓
+http://IP-DO-SERVIDOR:4310/dashboard
+      ↓
+login com DASHBOARD_TOKEN
+      ↓
+Abrir Chromium do servidor
+      ↓
+noVNC no próprio dashboard
+      ↓
+Chromium do Playwright no Xvfb
+      ↓
+Continuar com Google / ChatGPT
+      ↓
+cookies ficam no servidor
+```
+
+### Ubuntu / Debian
+
+Depois de atualizar o projeto:
+
+```bash
+git pull
+npm install
+npm run install:remote-login
+```
+
+O instalador adiciona os pacotes de sistema necessários:
+
+```text
+xvfb
+x11vnc
+xauth
+dbus-x11
+```
+
+Crie ou edite o arquivo `.env`:
+
+```text
+HOST=0.0.0.0
+DASHBOARD_TOKEN=troque-por-um-token-forte
+REMOTE_LOGIN_ENABLED=true
+CHATGPT_HEADLESS=false
+```
+
+Depois:
+
+```bash
+npm start
+```
+
+De outro equipamento na mesma rede, abra:
+
+```text
+http://IP-DO-SERVIDOR:4310/dashboard?token=troque-por-um-token-forte
+```
+
+Na primeira abertura com o token, o dashboard grava um cookie de sessão e remove o token da URL. Em seguida clique em:
+
+```text
+Abrir Chromium do servidor
+```
+
+A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11vnc` escuta apenas em `127.0.0.1`; a porta VNC não é exposta diretamente na rede.
+
+> O login remoto integrado é atualmente voltado para Linux. Em Windows sem monitor, use RDP/RustDesk/AnyDesk ou outra sessão gráfica remota. Se o dashboard for exposto fora de uma LAN/VPN confiável, coloque TLS/reverse proxy na frente dele; o token em HTTP puro não protege contra captura de tráfego na rede.
 
 ---
 
@@ -526,6 +613,7 @@ As variáveis disponíveis estão em `.env.example`.
 - [x] Seleção de modo/modelo por alias
 - [x] Token local opcional
 - [x] Dashboard local
+- [x] Login remoto do Chromium pelo dashboard em Linux
 
 ### Ainda em estabilização
 
