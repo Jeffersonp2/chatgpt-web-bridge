@@ -645,23 +645,45 @@ export class ChatGPTWebSession {
       part.type === "attachment"
     ) {
       const file = part.file || part.input_file || part.attachment || part;
-      const fileValue = file.data || file.base64 || file.file_data || file.url;
-      if (typeof fileValue !== "string" || /^https?:\/\//i.test(fileValue)) {
-        return null;
+      const fileValue =
+        file.buffer ||
+        file.data ||
+        file.base64 ||
+        file.file_data ||
+        file.url;
+
+      let decoded = null;
+
+      if (Buffer.isBuffer(fileValue)) {
+        decoded = {
+          mimeType: file.mime_type || file.mimeType || "application/octet-stream",
+          buffer: fileValue
+        };
+      } else {
+        if (typeof fileValue !== "string" || /^https?:\/\//i.test(fileValue)) {
+          return null;
+        }
+
+        decoded = this.decodeAttachmentData(
+          fileValue,
+          file.mime_type || file.mimeType || "application/octet-stream"
+        );
       }
 
-      const decoded = this.decodeAttachmentData(
-        fileValue,
-        file.mime_type || file.mimeType || "application/octet-stream"
-      );
       if (!decoded) return null;
 
       const extension = this.extensionFromMime(decoded.mimeType);
+      const kind = decoded.mimeType?.startsWith("audio/")
+        ? "audio"
+        : decoded.mimeType?.startsWith("image/")
+          ? "image"
+          : "file";
+
       return {
         name: file.filename || file.name || `file-${index + 1}.${extension}`,
         mimeType: decoded.mimeType,
         buffer: decoded.buffer,
-        kind: "file"
+        kind
       };
     }
 
