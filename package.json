@@ -1,13 +1,14 @@
 {
   "name": "testegpt-local-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Local OpenAI-compatible bridge backed by a user-authenticated ChatGPT Web session.",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "install:browser": "playwright install chromium"
+    "install:browser": "playwright install chromium",
+    "check": "node --check src/server.js && node --check src/browser.js"
   },
   "engines": {
     "node": ">=20"
