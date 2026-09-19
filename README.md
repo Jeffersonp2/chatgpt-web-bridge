@@ -159,6 +159,8 @@ Confira o estado:
 http://127.0.0.1:4310/health
 ```
 
+Com `DASHBOARD_TOKEN` configurado, `/health` e `/login` também exigem a autenticação do dashboard. Sem token, essas rotas só ficam disponíveis quando `HOST` é loopback.
+
 ---
 
 ## 🔄 Continuidade da conversa

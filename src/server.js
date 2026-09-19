@@ -893,7 +893,7 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.get("/health", async (_req, res) => {
+app.get("/health", dashboardAuth, async (_req, res) => {
   try {
     const status = await chatgpt.getStatus();
     res.json({
@@ -1591,7 +1591,7 @@ app.get("/dashboard/logout", dashboardAuth, (_req, res) => {
   res.redirect("/dashboard");
 });
 
-app.get("/login", async (_req, res) => {
+app.get("/login", dashboardAuth, async (_req, res) => {
   try {
     const state = await chatgpt.openLoginIfNeeded();
     res.json({
