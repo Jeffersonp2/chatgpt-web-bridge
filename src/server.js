@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import multer from "multer";
 import crypto from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { ChatGPTWebSession } from "./browser.js";
@@ -99,6 +100,33 @@ const bool = (value) =>
 
 const isLoopbackHost = (host) =>
   ["127.0.0.1", "::1", "localhost"].includes(String(host || "").toLowerCase());
+
+
+const dashboardNetworkUrls = () => {
+  if (isLoopbackHost(HOST)) {
+    return [`http://127.0.0.1:${PORT}/dashboard`];
+  }
+
+  if (HOST !== "0.0.0.0" && HOST !== "::") {
+    return [`http://${HOST}:${PORT}/dashboard`];
+  }
+
+  const urls = [];
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries || []) {
+      if (
+        entry &&
+        entry.family === "IPv4" &&
+        !entry.internal &&
+        entry.address
+      ) {
+        urls.push(`http://${entry.address}:${PORT}/dashboard`);
+      }
+    }
+  }
+
+  return [...new Set(urls)];
+};
 
 const REMOTE_LOGIN_SECURITY_OK =
   !REMOTE_LOGIN_ENABLED ||
@@ -1341,7 +1369,15 @@ app.use((error, _req, res, next) => {
 
 const server = app.listen(PORT, HOST, async () => {
   console.log(`testeGPT listening on http://${HOST}:${PORT}`);
-  console.log(`Dashboard: http://${HOST}:${PORT}/dashboard`);
+
+  const dashboardUrls = dashboardNetworkUrls();
+  if (dashboardUrls.length) {
+    for (const url of dashboardUrls) {
+      console.log(`Dashboard: ${url}`);
+    }
+  } else {
+    console.log(`Dashboard: http://${HOST}:${PORT}/dashboard`);
+  }
 
   if (REMOTE_LOGIN_ENABLED) {
     if (!REMOTE_LOGIN_SECURITY_OK) {
