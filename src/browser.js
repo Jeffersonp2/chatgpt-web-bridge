@@ -25,6 +25,11 @@ export class ChatGPTWebSession {
     this.queue = Promise.resolve();
     this.rollovers = 0;
     this.bridgeHistory = [];
+    this.bridgeSummary = "";
+    this.historyMaxRecentMessages = Number(options.historyMaxRecentMessages || 60);
+    this.historyMaxRecentChars = Number(options.historyMaxRecentChars || 80000);
+    this.historyMessageClipChars = Number(options.historyMessageClipChars || 1600);
+    this.historySummaryMaxChars = Number(options.historySummaryMaxChars || 50000);
     this.lastConversationUrl = null;
     this.startPromise = null;
     this.relaunchTimer = null;
@@ -69,6 +74,107 @@ export class ChatGPTWebSession {
     }
   }
 
+  sanitizeHistoryEntry(message) {
+    if (!message || typeof message !== "object") return null;
+
+    const role = String(message.role || "user");
+    const content = String(message.content || "").trim();
+    if (!content) return null;
+
+    return { role, content };
+  }
+
+  historyChars(messages = this.bridgeHistory) {
+    return messages.reduce(
+      (sum, message) => sum + String(message?.content || "").length,
+      0
+    );
+  }
+
+  summaryLine(message) {
+    const normalized = String(message?.content || "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const clipped = normalized.length > this.historyMessageClipChars
+      ? normalized.slice(0, this.historyMessageClipChars) + "…"
+      : normalized;
+
+    return "[" + String(message?.role || "user").toUpperCase() + "] " + clipped;
+  }
+
+  compactHistoryIfNeeded() {
+    const moved = [];
+
+    while (
+      this.bridgeHistory.length > this.historyMaxRecentMessages ||
+      this.historyChars() > this.historyMaxRecentChars
+    ) {
+      if (this.bridgeHistory.length <= 2) break;
+      const message = this.bridgeHistory.shift();
+      if (message) moved.push(message);
+    }
+
+    if (!moved.length) return false;
+
+    const addition = moved.map((message) => this.summaryLine(message)).join("\n");
+    this.bridgeSummary = [this.bridgeSummary.trim(), addition]
+      .filter(Boolean)
+      .join("\n");
+
+    if (this.bridgeSummary.length > this.historySummaryMaxChars) {
+      const headSize = Math.min(5000, Math.floor(this.historySummaryMaxChars * 0.15));
+      const tailSize = Math.max(0, this.historySummaryMaxChars - headSize - 80);
+      this.bridgeSummary = [
+        this.bridgeSummary.slice(0, headSize),
+        "[... older accumulated context compacted ...]",
+        this.bridgeSummary.slice(-tailSize)
+      ].join("\n");
+    }
+
+    return true;
+  }
+
+  stateSnapshot() {
+    return {
+      version: 2,
+      sessionId: this.sessionId,
+      conversationUrl: this.isPersistableConversationUrl(this.lastConversationUrl)
+        ? this.lastConversationUrl
+        : null,
+      rollovers: this.rollovers,
+      summary: this.bridgeSummary,
+      history: this.bridgeHistory
+        .map((message) => this.sanitizeHistoryEntry(message))
+        .filter(Boolean),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  persistSessionState() {
+    const snapshot = this.stateSnapshot();
+
+    this.stateWritePromise = this.stateWritePromise
+      .catch(() => {})
+      .then(async () => {
+        const file = this.sessionStateFile();
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(
+          file,
+          JSON.stringify(snapshot, null, 2) + "\n",
+          "utf8"
+        );
+      })
+      .catch((error) => {
+        console.warn(
+          "[bridge] Could not persist session \"" + this.sessionId + "\":",
+          error.message
+        );
+      });
+
+    return this.stateWritePromise;
+  }
+
   async loadSessionState() {
     if (this.sessionStateLoaded) return;
 
@@ -80,14 +186,41 @@ export class ChatGPTWebSession {
 
       if (this.isPersistableConversationUrl(state?.conversationUrl)) {
         this.lastConversationUrl = state.conversationUrl;
+      }
+
+      if (Array.isArray(state?.history)) {
+        this.bridgeHistory = state.history
+          .map((message) => this.sanitizeHistoryEntry(message))
+          .filter(Boolean);
+      }
+
+      if (typeof state?.summary === "string") {
+        this.bridgeSummary = state.summary;
+      }
+
+      if (Number.isFinite(Number(state?.rollovers))) {
+        this.rollovers = Number(state.rollovers);
+      }
+
+      this.compactHistoryIfNeeded();
+
+      if (this.lastConversationUrl) {
         console.log(
-          `[bridge] Restoring session "${this.sessionId}" at ${this.lastConversationUrl}`
+          "[bridge] Restoring session \"" + this.sessionId + "\" at " +
+          this.lastConversationUrl + " (" + this.bridgeHistory.length +
+          " recent messages, " + this.bridgeSummary.length + " summary chars)"
+        );
+      } else if (this.bridgeHistory.length || this.bridgeSummary) {
+        console.log(
+          "[bridge] Restored persisted context for session \"" + this.sessionId +
+          "\" (" + this.bridgeHistory.length + " recent messages, " +
+          this.bridgeSummary.length + " summary chars)"
         );
       }
     } catch (error) {
       if (error?.code !== "ENOENT") {
         console.warn(
-          `[bridge] Could not read persisted session "${this.sessionId}":`,
+          "[bridge] Could not read persisted session \"" + this.sessionId + "\":",
           error.message
         );
       }
@@ -101,41 +234,30 @@ export class ChatGPTWebSession {
     if (this.lastConversationUrl === url) return true;
 
     this.lastConversationUrl = url;
-
-    this.stateWritePromise = this.stateWritePromise
-      .catch(() => {})
-      .then(async () => {
-        const file = this.sessionStateFile();
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(
-          file,
-          JSON.stringify({
-            sessionId: this.sessionId,
-            conversationUrl: url,
-            updatedAt: new Date().toISOString()
-          }, null, 2) + "\n",
-          "utf8"
-        );
-      })
-      .catch((error) => {
-        console.warn(
-          `[bridge] Could not persist session "${this.sessionId}":`,
-          error.message
-        );
-      });
-
+    this.persistSessionState();
     return true;
   }
 
-  async clearConversationState() {
+  async clearConversationState({ preserveHistory = false } = {}) {
     this.lastConversationUrl = null;
+
+    if (!preserveHistory) {
+      this.bridgeHistory = [];
+      this.bridgeSummary = "";
+      this.rollovers = 0;
+    }
+
     await this.stateWritePromise.catch(() => {});
+
+    if (preserveHistory) {
+      await this.persistSessionState();
+      return;
+    }
 
     try {
       await fs.rm(this.sessionStateFile(), { force: true });
     } catch {}
   }
-
   configurePage(page) {
     if (!page || this.configuredPages.has(page)) return;
 
@@ -279,7 +401,11 @@ export class ChatGPTWebSession {
       sharedContext: this.context,
       ownsContext: false,
       dedicatedPage: true,
-      sessionId
+      sessionId,
+      historyMaxRecentMessages: this.historyMaxRecentMessages,
+      historyMaxRecentChars: this.historyMaxRecentChars,
+      historyMessageClipChars: this.historyMessageClipChars,
+      historySummaryMaxChars: this.historySummaryMaxChars
     });
 
     await session.start();
@@ -477,6 +603,8 @@ export class ChatGPTWebSession {
       this.pageRecoveryTimer = null;
     }
 
+    await this.stateWritePromise.catch(() => {});
+
     const context = this.context;
     const page = this.page;
     this.context = null;
@@ -581,6 +709,8 @@ export class ChatGPTWebSession {
       conversationActive: this.isConversationPage(),
       sessionId: this.sessionId,
       persistedConversationUrl: this.lastConversationUrl,
+      persistedHistoryMessages: this.bridgeHistory.length,
+      persistedSummaryChars: this.bridgeSummary.length,
       rollovers: this.rollovers,
       profileDir: this.profileDir
     };
@@ -640,8 +770,8 @@ export class ChatGPTWebSession {
     );
   }
 
-  async newChat() {
-    await this.clearConversationState();
+  async newChat({ preserveHistory = false } = {}) {
+    await this.clearConversationState({ preserveHistory });
     await this.page.goto(CHATGPT_URL, { waitUntil: "domcontentloaded" });
     await this.findComposer();
   }
@@ -953,18 +1083,26 @@ export class ChatGPTWebSession {
         role: String(message.role || "user"),
         content: this.messageText(message)
       }));
+
+    this.bridgeSummary = "";
+    this.compactHistoryIfNeeded();
+    this.persistSessionState();
   }
 
   recordMessage(role, content) {
     const message = { role, content: String(content || "") };
-    if (!message.content.trim()) return;
+    if (!message.content.trim()) return false;
 
     const last = this.bridgeHistory[this.bridgeHistory.length - 1];
     if (!this.sameMessage(last, message)) {
       this.bridgeHistory.push(message);
+      this.compactHistoryIfNeeded();
+      this.persistSessionState();
+      return true;
     }
-  }
 
+    return false;
+  }
   assistantResultToHistoryText(result) {
     const text = String(result?.text || "").trim();
     if (text) return text;
@@ -982,16 +1120,23 @@ export class ChatGPTWebSession {
 
   buildRolloverPrompt(messages = []) {
     const historySource = this.bridgeHistory.length ? this.bridgeHistory : messages;
-    const history = this.buildPrompt(historySource);
+    const recentHistory = this.buildPrompt(historySource);
+    const accumulatedSummary = this.bridgeSummary.trim();
+
     return [
       "Continue the same conversation in this new normal ChatGPT chat.",
       "The previous chat reached its conversation-specific limit.",
-      "Use the conversation history below as context and answer the final user request without mentioning this handoff unless relevant.",
-      "",
-      history
-    ].join("\n");
+      "Use the persisted context below to preserve continuity.",
+      "Do not mention this handoff unless it is directly relevant.",
+      "Answer the final user request in the recent history.",
+      accumulatedSummary
+        ? "\nACCUMULATED OLDER CONTEXT:\n" + accumulatedSummary
+        : "",
+      recentHistory
+        ? "\nRECENT CONVERSATION HISTORY:\n" + recentHistory
+        : ""
+    ].filter(Boolean).join("\n");
   }
-
   async selectMode(mode) {
     const requested = String(mode || "").trim().toLowerCase();
     if (!requested || requested === "auto" || requested === "default") {
@@ -1993,7 +2138,15 @@ export class ChatGPTWebSession {
         }
 
         this.rollovers += 1;
-        await this.newChat();
+        this.persistSessionState();
+
+        console.warn(
+          "[bridge] Conversation limit reached for session \"" + this.sessionId + "\". " +
+          "Rolling over with " + this.bridgeHistory.length + " recent messages and " +
+          this.bridgeSummary.length + " summary chars."
+        );
+
+        await this.newChat({ preserveHistory: true });
 
         const rolloverPrompt = this.buildRolloverPrompt(messages);
         const result = await this.sendPrompt(rolloverPrompt, attachments, {
