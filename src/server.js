@@ -6,7 +6,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 4310);
 const HOST = process.env.HOST || "127.0.0.1";
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: process.env.JSON_LIMIT || "50mb" }));
 
 const chatgpt = new ChatGPTWebSession({
   profileDir: process.env.CHATGPT_PROFILE_DIR || ".data/chatgpt-profile",
@@ -16,6 +16,47 @@ const chatgpt = new ChatGPTWebSession({
 
 const id = () => `chatcmpl_${crypto.randomUUID().replaceAll("-", "")}`;
 const unix = () => Math.floor(Date.now() / 1000);
+
+const mergeTopLevelAttachments = (messages = [], attachments = []) => {
+  if (!Array.isArray(attachments) || !attachments.length) return messages;
+
+  const cloned = messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message?.content)
+      ? [...message.content]
+      : message?.content
+  }));
+
+  let targetIndex = -1;
+  for (let index = cloned.length - 1; index >= 0; index -= 1) {
+    if (String(cloned[index]?.role || "") === "user") {
+      targetIndex = index;
+      break;
+    }
+  }
+
+  if (targetIndex < 0) {
+    cloned.push({ role: "user", content: [] });
+    targetIndex = cloned.length - 1;
+  }
+
+  const target = cloned[targetIndex];
+  const parts = Array.isArray(target.content)
+    ? [...target.content]
+    : (target.content == null || target.content === "")
+      ? []
+      : [{ type: "text", text: String(target.content) }];
+
+  target.content = [
+    ...parts,
+    ...attachments.map((attachment) => ({
+      type: "attachment",
+      attachment
+    }))
+  ];
+
+  return cloned;
+};
 
 const contextualFileMessage = (files = []) => {
   if (!files.length) return "";
@@ -107,7 +148,8 @@ app.post("/v1/conversation/new", async (_req, res) => {
 
 app.post("/v1/chat/completions", async (req, res) => {
   const body = req.body || {};
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+  const messages = mergeTopLevelAttachments(rawMessages, body.attachments);
   const model = body.model || "chatgpt-web";
 
   if (!messages.length) {
@@ -195,9 +237,10 @@ app.post("/v1/chat/completions", async (req, res) => {
 app.post("/v1/responses", async (req, res) => {
   const body = req.body || {};
   const input = body.input;
-  const messages = Array.isArray(input)
+  const rawMessages = Array.isArray(input)
     ? input
     : [{ role: "user", content: typeof input === "string" ? input : JSON.stringify(input ?? "") }];
+  const messages = mergeTopLevelAttachments(rawMessages, body.attachments);
 
   try {
     const result = await chatgpt.complete(messages, { newChat: body.new_chat === true });
