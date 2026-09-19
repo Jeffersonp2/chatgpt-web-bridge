@@ -14,6 +14,21 @@ const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 40);
 const MAX_REMOTE_FILE_BYTES = Number(process.env.MAX_REMOTE_FILE_BYTES || 25 * 1024 * 1024);
 const REMOTE_FETCH_TIMEOUT_MS = Number(process.env.REMOTE_FETCH_TIMEOUT_MS || 30000);
 const ALLOW_REMOTE_URL_INPUT = String(process.env.ALLOW_REMOTE_URL_INPUT || "true").toLowerCase() !== "false";
+const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
+
+if (CORS_ORIGIN) {
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Session-Id");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+
+    next();
+  });
+}
 
 app.use(express.json({ limit: JSON_LIMIT }));
 
@@ -148,7 +163,12 @@ const normalizeIncomingBody = (req) => {
     if (key in body) body[key] = bool(body[key]);
   }
 
-  const multipartAttachments = (req.files || []).map((file) => ({
+  const incomingFiles = [
+    ...(Array.isArray(req.files) ? req.files : []),
+    ...(req.file ? [req.file] : [])
+  ];
+
+  const multipartAttachments = incomingFiles.map((file) => ({
     filename: file.originalname || file.fieldname || "upload.bin",
     mime_type: file.mimetype || "application/octet-stream",
     buffer: file.buffer
@@ -899,6 +919,65 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
   }
 });
 
+const handleAudioEndpoint = (instruction) => async (req, res) => {
+  const body = normalizeIncomingBody(req);
+
+  if (!(Array.isArray(body.attachments) && body.attachments.length)) {
+    return res.status(400).json({
+      error: {
+        message: "A multipart audio file is required in field 'file'.",
+        type: "invalid_request_error"
+      }
+    });
+  }
+
+  try {
+    const userPrompt = String(body.prompt || "").trim();
+    const prompt = userPrompt
+      ? `${instruction}\n\nAdditional instruction: ${userPrompt}`
+      : instruction;
+
+    const messages = await prepareMessages(
+      [{ role: "user", content: prompt }],
+      body.attachments
+    );
+
+    const sessionId = requestSessionId(req, body);
+    const session = await getSession(sessionId);
+    const mode = modeFromRequest(body);
+
+    const result = await session.complete(messages, {
+      newChat: body.new_chat === true,
+      mode
+    });
+
+    res.json({
+      text: String(result?.text || "").trim(),
+      session_id: sessionId,
+      model: body.model || "chatgpt-web"
+    });
+  } catch (error) {
+    const shaped = errorShape(error);
+    res.status(shaped.status).json(shaped.payload);
+  }
+};
+
+app.post(
+  "/v1/audio/transcriptions",
+  upload.single("file"),
+  handleAudioEndpoint(
+    "Transcribe the attached audio faithfully. Return only the transcription unless the user asks for something else."
+  )
+);
+
+app.post(
+  "/v1/audio/translations",
+  upload.single("file"),
+  handleAudioEndpoint(
+    "Transcribe the attached audio and translate it to English. Return only the English translation unless the user asks for something else."
+  )
+);
+
 app.post("/v1/images/generations", upload.any(), async (req, res) => {
   const body = normalizeIncomingBody(req);
   const prompt = String(body.prompt || "").trim();
@@ -962,6 +1041,29 @@ app.post("/v1/images/generations", upload.any(), async (req, res) => {
     const shaped = errorShape(error);
     res.status(shaped.status).json(shaped.payload);
   }
+});
+
+app.use((error, _req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    return res.status(400).json({
+      error: {
+        message: error.message,
+        type: "invalid_request_error",
+        code: error.code
+      }
+    });
+  }
+
+  if (error) {
+    return res.status(500).json({
+      error: {
+        message: error.message || "Unexpected server error.",
+        type: "server_error"
+      }
+    });
+  }
+
+  next();
 });
 
 const server = app.listen(PORT, HOST, async () => {
