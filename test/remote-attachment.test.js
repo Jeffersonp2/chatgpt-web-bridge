@@ -72,6 +72,8 @@ test("timeout also covers DNS resolution", async () => {
   await assert.rejects(downloadRemoteAttachment("https://files.example/file", {
     maxBytes: 100,
     timeoutMs: 20,
-    resolve: () => new Promise(() => {})
+    resolve: () => new Promise((resolve) => setTimeout(() => resolve([
+      { address: "8.8.8.8", family: 4 }
+    ]), 100))
   }), /timeout|aborted/i);
 });
