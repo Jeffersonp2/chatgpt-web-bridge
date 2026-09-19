@@ -122,7 +122,7 @@ connect("Text Parts", "Send Text");
 connect("Generated Files", "Send Generated File");
 
 const workflow = {
-  name: "testeGPT WhatsApp Cloud (texto e mídia)",
+  name: "ChatGPT Web Bridge WhatsApp Cloud (texto e mídia)",
   nodes, connections,
   settings: { executionOrder: "v1" },
   active: false,

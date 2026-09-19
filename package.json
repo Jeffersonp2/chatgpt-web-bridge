@@ -1,9 +1,9 @@
 {
-  "name": "testegpt-local-bridge",
+  "name": "chatgpt-web-bridge",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Local OpenAI-compatible bridge backed by a user-authenticated ChatGPT Web session.",
+  "description": "Local OpenAI-compatible API for an authenticated ChatGPT Web session, with a dashboard and n8n/WhatsApp integrations.",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",

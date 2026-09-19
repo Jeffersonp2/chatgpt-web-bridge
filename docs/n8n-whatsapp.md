@@ -1,13 +1,13 @@
 # WhatsApp e n8n
 
-O testeGPT recebe texto, áudio, imagens e arquivos, mas não se conecta sozinho ao WhatsApp. O n8n recebe a mensagem, baixa a mídia com a credencial do provedor, chama o bridge e envia a resposta. Este guia usa os nós do WhatsApp Business Cloud da Meta; para outro provedor, troque apenas os nós de entrada, download e envio.
+O ChatGPT Web Bridge recebe texto, áudio, imagens e arquivos, mas não se conecta sozinho ao WhatsApp. O n8n recebe a mensagem, baixa a mídia com a credencial do provedor, chama o bridge e envia a resposta. Este guia usa os nós do WhatsApp Business Cloud da Meta; para outro provedor, troque apenas os nós de entrada, download e envio.
 
 O arquivo [n8n-whatsapp-meta.json](../examples/n8n-whatsapp-meta.json) contém um workflow importável para a API oficial da Meta. Importe-o em **Workflows → Import from File**, configure os itens abaixo e só então ative o fluxo. O arquivo pode ser regenerado com `node scripts/build-n8n-workflow.mjs`.
 
 ## Preparação
 
-1. Inicie o testeGPT e confirme que o login do ChatGPT Web funciona.
-2. Garanta que o n8n alcança a URL do bridge. `127.0.0.1` dentro de um contêiner n8n aponta para o próprio contêiner, não para o computador que executa o testeGPT.
+1. Inicie o ChatGPT Web Bridge e confirme que o login do ChatGPT Web funciona.
+2. Garanta que o n8n alcança a URL do bridge. `127.0.0.1` dentro de um contêiner n8n aponta para o próprio contêiner, não para o computador que executa o ChatGPT Web Bridge.
 3. Se usar `HOST=0.0.0.0`, configure **duas chaves diferentes**: `DASHBOARD_TOKEN` e `LOCAL_API_KEY`. Use HTTPS ou uma rede privada entre n8n e o bridge.
 4. Guarde `LOCAL_API_KEY` em uma credencial Header Auth do n8n com o cabeçalho `X-API-Key`. Não coloque a chave no workflow exportado.
 5. No workflow importado, substitua `SEU_SERVIDOR` nos nós **Bridge Text** e **Bridge Media** e `SEU_PHONE_NUMBER_ID` nos nós **Send Text** e **Send Generated File**.

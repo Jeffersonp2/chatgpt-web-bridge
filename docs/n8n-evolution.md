@@ -1,10 +1,10 @@
 # WhatsApp com Evolution API v2 e n8n
 
-Importe [n8n-whatsapp-evolution.json](../examples/n8n-whatsapp-evolution.json) no n8n. O fluxo recebe o evento `MESSAGES_UPSERT`, envia texto e mídia ao testeGPT e devolve texto e arquivos pelo WhatsApp. O arquivo pode ser regenerado com `node scripts/build-n8n-evolution-workflow.mjs`.
+Importe [n8n-whatsapp-evolution.json](../examples/n8n-whatsapp-evolution.json) no n8n. O fluxo recebe o evento `MESSAGES_UPSERT`, envia texto e mídia ao ChatGPT Web Bridge e devolve texto e arquivos pelo WhatsApp. O arquivo pode ser regenerado com `node scripts/build-n8n-evolution-workflow.mjs`.
 
 ## Configuração
 
-1. Inicie o testeGPT e confirme que a sessão do ChatGPT Web está conectada. O n8n precisa alcançar o endereço do bridge; `127.0.0.1` dentro de um contêiner aponta para o próprio contêiner.
+1. Inicie o ChatGPT Web Bridge e confirme que a sessão do ChatGPT Web está conectada. O n8n precisa alcançar o endereço do bridge; `127.0.0.1` dentro de um contêiner aponta para o próprio contêiner.
 2. Importe o workflow e altere `SEU_SERVIDOR` nos nós **Bridge Text** e **Bridge Media**. Configure neles uma credencial **Header Auth** com `X-API-Key: <LOCAL_API_KEY>`. Se o bridge estiver acessível fora do computador, use `LOCAL_API_KEY`, `DASHBOARD_TOKEN` distintos e HTTPS ou rede privada.
 3. Altere `SUA_EVOLUTION_API` e `SUA_INSTANCIA` nos nós **Send Text** e **Send Generated File**. Configure nesses nós outra credencial **Header Auth**, com `apikey: <chave da Evolution API>`.
 4. No nó **Evolution Webhook**, substitua `TROQUE-POR-SEGREDO-ALEATORIO` por um valor longo e aleatório. Configure o webhook da instância Evolution para apontar à **Production URL** exibida pelo n8n. Use `webhookByEvents: false`, `webhookBase64: true` e somente o evento `MESSAGES_UPSERT`. A publicação do endpoint deve ser protegida por HTTPS e controle de acesso no proxy quando possível.

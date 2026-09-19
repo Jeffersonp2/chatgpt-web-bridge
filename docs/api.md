@@ -1,4 +1,4 @@
-# Referência HTTP — testeGPT
+# Referência HTTP — ChatGPT Web Bridge
 
 Base URL padrão: `http://127.0.0.1:4310`. Os endpoints `/v1/*` são compatíveis com parte dos formatos da API da OpenAI, com extensões próprias descritas aqui. O processamento depende de uma sessão autenticada no ChatGPT Web.
 

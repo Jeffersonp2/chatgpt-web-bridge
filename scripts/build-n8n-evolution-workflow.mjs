@@ -119,7 +119,7 @@ connect("Text Parts", "Send Text");
 connect("Generated Files", "Send Generated File");
 
 const workflow = {
-  name: "testeGPT Evolution API v2 (texto e mídia)", nodes, connections,
+  name: "ChatGPT Web Bridge Evolution API v2 (texto e mídia)", nodes, connections,
   settings: { executionOrder: "v1" }, active: false, pinData: {}, tags: []
 };
 const output = path.resolve("examples/n8n-whatsapp-evolution.json");

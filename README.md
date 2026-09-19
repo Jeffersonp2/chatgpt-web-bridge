@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 testeGPT Local Bridge
+# 🤖 ChatGPT Web Bridge
 
 ### ChatGPT Web → API local compatível com OpenAI
 
@@ -17,7 +17,7 @@
 
 ## ✨ O que é
 
-O **testeGPT Local Bridge** transforma uma sessão do **ChatGPT Web autenticada no seu próprio navegador local** em uma API HTTP local.
+O **ChatGPT Web Bridge** transforma uma sessão do **ChatGPT Web autenticada no seu próprio navegador local** em uma API HTTP local.
 
 A ideia é simples:
 
@@ -27,7 +27,7 @@ Seu programa / IDE / cliente
           │ POST /v1/chat/completions
           ▼
 ┌──────────────────────────┐
-│ testeGPT Local Bridge    │
+│ ChatGPT Web Bridge       │
 │ http://127.0.0.1:4310/v1 │
 └────────────┬─────────────┘
              │
@@ -100,8 +100,8 @@ Não precisa de:
 Clone:
 
 ```bash
-git clone https://github.com/Jeffersonp2/testeGPT.git
-cd testeGPT
+git clone https://github.com/Jeffersonp2/chatgpt-web-bridge.git
+cd chatgpt-web-bridge
 ```
 
 Instale as dependências:
@@ -556,7 +556,7 @@ Por segurança, o dashboard impede salvar uma configuração que exponha `HOST` 
 Depois de salvar, o arquivo é gravado no disco e o dashboard mostra:
 
 ```text
-Configuração gravada em .env. Reinicie o testeGPT para aplicar as mudanças.
+Configuração gravada em .env. Reinicie o ChatGPT Web Bridge para aplicar as mudanças.
 ```
 
 A maioria das opções é carregada na inicialização do processo, portanto execute novamente:
@@ -565,7 +565,7 @@ A maioria das opções é carregada na inicialização do processo, portanto exe
 npm start
 ```
 
-ou reinicie o serviço que estiver executando o testeGPT.
+ou reinicie o serviço que estiver executando o ChatGPT Web Bridge.
 
 > Variáveis definidas diretamente pelo sistema operacional podem ter prioridade sobre o conteúdo do `.env`. O arquivo `.env` continua listado no `.gitignore` e não deve ser enviado ao GitHub.
 
@@ -1036,7 +1036,7 @@ Para aplicações de produção, integração oficial e comportamento contratual
 
 Feito para experimentar **ChatGPT como backend local**, mantendo o processamento do modelo remoto.
 
-**Jeffersonp2/testeGPT**
+**Jeffersonp2/chatgpt-web-bridge**
 
 </div>
 

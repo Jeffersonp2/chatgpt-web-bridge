@@ -428,7 +428,7 @@ const dashboardAuth = (req, res, next) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>testeGPT Dashboard Login</title>
+<title>ChatGPT Web Bridge Dashboard Login</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:520px;margin:70px auto;padding:0 20px;background:#111;color:#eee}
 .card{background:#1b1b1b;border:1px solid #333;border-radius:14px;padding:22px}
@@ -438,7 +438,7 @@ button{cursor:pointer}
 </head>
 <body>
 <div class="card">
-<h1>testeGPT Dashboard</h1>
+<h1>ChatGPT Web Bridge Dashboard</h1>
 <p>Informe o token configurado em <code>DASHBOARD_TOKEN</code>.</p>
 <form method="get">
 <input type="password" name="token" autocomplete="current-password" autofocus>
@@ -890,7 +890,7 @@ const startSseHeartbeat = (res, intervalMs = 10000) => {
 
 app.get("/", (_req, res) => {
   res.json({
-    name: "testeGPT Local Bridge",
+    name: "ChatGPT Web Bridge",
     version: "0.2.0",
     api: `http://${HOST}:${PORT}/v1`,
     dashboard: `http://${HOST}:${PORT}/dashboard`
@@ -948,7 +948,7 @@ app.get("/dashboard", dashboardAuth, (_req, res) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>testeGPT Dashboard</title>
+<title>ChatGPT Web Bridge Dashboard</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:980px;margin:40px auto;padding:0 20px;background:#111;color:#eee}
 .card{background:#1b1b1b;border:1px solid #333;border-radius:14px;padding:18px;margin:14px 0}
@@ -958,7 +958,7 @@ a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#ee
 </style>
 </head>
 <body>
-<h1>testeGPT Local Bridge</h1>
+<h1>ChatGPT Web Bridge</h1>
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
   <a class="button" href="/dashboard/settings">⚙ Configurar .env</a>
   <a class="button" href="/dashboard/browser">🖥 Chromium remoto</a>
@@ -1114,7 +1114,7 @@ app.get("/dashboard/settings", dashboardAuth, async (req, res) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>testeGPT - Configurar .env</title>
+<title>ChatGPT Web Bridge - Configurar .env</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:1050px;margin:32px auto;padding:0 20px;background:#111;color:#eee}
 a{color:#eee}.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -1149,7 +1149,7 @@ code{color:#aaa;font-size:12px}
   <h1>Configurar .env</h1>
   <a href="/dashboard">← Dashboard</a>
 </div>
-${saved ? '<div class="notice">Configuração gravada em <code>.env</code>. Reinicie o testeGPT para aplicar as mudanças.</div>' : ""}
+${saved ? '<div class="notice">Configuração gravada em <code>.env</code>. Reinicie o ChatGPT Web Bridge para aplicar as mudanças.</div>' : ""}
 <div class="warning">
   Os valores são gravados em <code>${htmlEscape(ENV_FILE)}</code>.
   Variáveis já definidas pelo sistema operacional podem ter prioridade sobre o arquivo <code>.env</code>.
@@ -1249,7 +1249,7 @@ app.get("/dashboard/browser", dashboardAuth, async (_req, res) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>testeGPT - Controle do Chromium</title>
+<title>ChatGPT Web Bridge - Controle do Chromium</title>
 <style>
 html,body{margin:0;min-height:100%;background:#111;color:#eee;font-family:system-ui,sans-serif}
 #bar{position:sticky;top:0;z-index:20;background:#1b1b1b;border-bottom:1px solid #333;padding:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -1546,7 +1546,7 @@ app.get("/dashboard/login", dashboardAuth, async (_req, res) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>testeGPT - Login remoto</title>
+<title>ChatGPT Web Bridge - Login remoto</title>
 <style>
 html,body{margin:0;width:100%;height:100%;background:#111;color:#eee;font-family:system-ui,sans-serif;overflow:hidden}
 #bar{height:48px;box-sizing:border-box;padding:10px 14px;background:#1b1b1b;border-bottom:1px solid #333;display:flex;gap:14px;align-items:center}
@@ -2181,7 +2181,7 @@ app.use((error, _req, res, next) => {
 });
 
 const server = app.listen(PORT, HOST, async () => {
-  console.log(`testeGPT listening on http://${HOST}:${PORT}`);
+  console.log(`ChatGPT Web Bridge listening on http://${HOST}:${PORT}`);
   console.log(
     `[browser] mode: ${EFFECTIVE_CHATGPT_HEADLESS ? "headless" : WINDOWS_HIDDEN_HEADFUL ? "hidden/headful" : "visible"}; channel: ${CHATGPT_BROWSER_CHANNEL || "playwright-chromium"}`
   );

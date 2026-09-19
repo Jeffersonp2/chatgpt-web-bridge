@@ -1,5 +1,5 @@
 {
-  "name": "testeGPT Evolution API v2 (texto e mídia)",
+  "name": "ChatGPT Web Bridge Evolution API v2 (texto e mídia)",
   "nodes": [
     {
       "id": "evolution-webhook",

@@ -1,5 +1,5 @@
 {
-  "name": "testeGPT WhatsApp Cloud (texto e mídia)",
+  "name": "ChatGPT Web Bridge WhatsApp Cloud (texto e mídia)",
   "nodes": [
     {
       "id": "whatsapp-trigger",
