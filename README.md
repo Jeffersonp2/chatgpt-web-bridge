@@ -452,6 +452,7 @@ As variáveis disponíveis estão em `.env.example`.
 | `REMOTE_FETCH_TIMEOUT_MS` | `30000` | Timeout de URL remota |
 | `ALLOW_REMOTE_URL_INPUT` | `true` | Habilita entrada HTTP/HTTPS |
 | `LOCAL_API_KEY` | vazio | Proteção opcional para rotas `/v1` |
+| `CORS_ORIGIN` | vazio | Origem CORS opcional para clientes web |
 
 > Recomenda-se manter `HOST=127.0.0.1`. Não exponha diretamente o bridge na internet sem autenticação, TLS e controles adicionais.
 
@@ -468,6 +469,7 @@ As variáveis disponíveis estão em `.env.example`.
 - [x] Conversa persistente e rollover
 - [x] Entrada de imagens
 - [x] Entrada de áudio
+- [x] Endpoints de transcrição e tradução de áudio
 - [x] Entrada de arquivos
 - [x] Base64/data URL
 - [x] Multipart/form-data
@@ -625,6 +627,37 @@ ALLOW_REMOTE_URL_INPUT=true
 MAX_REMOTE_FILE_BYTES=26214400
 REMOTE_FETCH_TIMEOUT_MS=30000
 ```
+
+---
+
+## 🎧 Endpoints de áudio
+
+Além de mandar áudio dentro de `/v1/chat/completions`, existem dois atalhos compatíveis com o estilo da API:
+
+```text
+POST /v1/audio/transcriptions
+POST /v1/audio/translations
+```
+
+Exemplo:
+
+```bash
+curl http://127.0.0.1:4310/v1/audio/transcriptions \
+  -F "file=@comando.wav" \
+  -F "model=chatgpt-web"
+```
+
+A resposta retorna:
+
+```json
+{
+  "text": "texto reconhecido do áudio",
+  "session_id": "default",
+  "model": "chatgpt-web"
+}
+```
+
+Para usar a gravação como comando, continue usando `/v1/chat/completions`; o áudio entra como anexo e o ChatGPT pode interpretar e executar a instrução falada dentro das capacidades do bridge.
 
 ---
 
