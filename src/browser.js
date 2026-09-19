@@ -22,6 +22,10 @@ export class ChatGPTWebSession {
     this.hiddenWindow = options.hiddenWindow === true;
     this.browserChannel = String(options.browserChannel || "").trim();
     this.timeoutMs = Number(options.timeoutMs || 180000);
+    const streamPollMs = Number(options.streamPollMs ?? 200);
+    this.streamPollMs = Number.isFinite(streamPollMs)
+      ? Math.min(1000, Math.max(100, Math.round(streamPollMs)))
+      : 200;
     this.context = null;
     this.page = null;
     this.queue = Promise.resolve();
@@ -289,6 +293,8 @@ export class ChatGPTWebSession {
       if (wasKeeperPage) {
         console.warn("[bridge] Keeper tab closed.");
 
+        if (wasActivePage) this.schedulePageRecovery();
+
         setTimeout(async () => {
           if (
             this.stopping ||
@@ -300,14 +306,11 @@ export class ChatGPTWebSession {
           }
 
           try {
-            const livePages = this.context.pages().filter((candidate) => !candidate.isClosed());
-            if (!livePages.length && !this.page) {
-              return;
-            }
-
             await this.ensureKeeperPage();
             console.log("[bridge] Keeper tab recreated.");
-          } catch {}
+          } catch {
+            this.scheduleBrowserRecovery();
+          }
         }, 750);
 
         return;
@@ -351,7 +354,11 @@ export class ChatGPTWebSession {
       }
 
       try {
-        const pages = context.pages().filter((page) => !page.isClosed());
+        // Never turn the blank keeper tab into the active chat. That leaves no
+        // independent tab to keep Chromium alive during browser downloads.
+        const pages = context.pages().filter((page) =>
+          !page.isClosed() && page !== this.keeperPage
+        );
         const existing =
           (this.lastConversationUrl
             ? pages.find((page) => page.url() === this.lastConversationUrl)
@@ -403,6 +410,7 @@ export class ChatGPTWebSession {
       hiddenWindow: this.hiddenWindow,
       browserChannel: this.browserChannel,
       timeoutMs: this.timeoutMs,
+      streamPollMs: this.streamPollMs,
       sharedContext: this.context,
       ownsContext: false,
       dedicatedPage: true,
@@ -1763,10 +1771,14 @@ export class ChatGPTWebSession {
   }
 
   assistantTurnLocator() {
-    // Current ChatGPT image/file responses are rendered at the conversation-turn level and may
-    // not contain a nested data-message-author-role="assistant" element.
+    // Prefer whole turns so generated artifacts stay attached to the answer.
+    // Some UI variants only mark the message author; exclude those nested in
+    // an already selected turn to avoid counting one reply twice.
     return this.page.locator(
-      '[data-testid^="conversation-turn-"][data-turn="assistant"]'
+      '[data-testid^="conversation-turn-"][data-turn="assistant"], ' +
+      '[data-message-author-role="assistant"]:not(' +
+      '[data-testid^="conversation-turn-"][data-turn="assistant"] ' +
+      '[data-message-author-role="assistant"])'
     );
   }
 
@@ -1900,7 +1912,8 @@ export class ChatGPTWebSession {
         };
       });
 
-      const markdownText = [...node.querySelectorAll(".markdown")]
+      const markdownText = [...node.querySelectorAll('.markdown, [class*="prose"]')]
+        .filter((el) => !el.parentElement?.closest('.markdown, [class*="prose"]'))
         .map((el) => (el.innerText || "").trim())
         .filter(Boolean)
         .join("\n")
@@ -1908,7 +1921,7 @@ export class ChatGPTWebSession {
 
       const assistantMessage = node.querySelector('[data-message-author-role="assistant"]');
       const fallbackText = assistantMessage
-        ? [...assistantMessage.querySelectorAll(".markdown")]
+        ? [...assistantMessage.querySelectorAll('.markdown, [class*="prose"]')]
             .map((el) => (el.innerText || "").trim())
             .filter(Boolean)
             .join("\n")
@@ -1916,7 +1929,7 @@ export class ChatGPTWebSession {
         : "";
 
       return {
-        text: markdownText || fallbackText,
+        text: markdownText || fallbackText || (assistantMessage || node).innerText.trim(),
         files,
         artifacts
       };
@@ -1924,7 +1937,10 @@ export class ChatGPTWebSession {
   }
 
   async collectGlobalMediaFiles(beforeMediaUrls) {
-    const items = await this.page.locator("img[src], video[src], source[src]").evaluateAll((elements) =>
+    const page = this.page;
+    if (!page || page.isClosed()) return [];
+
+    const items = await page.locator("img[src], video[src], source[src]").evaluateAll((elements) =>
       elements.map((el) => ({
         tag: el.tagName.toLowerCase(),
         url: el.src || el.getAttribute("src"),
@@ -2123,7 +2139,7 @@ export class ChatGPTWebSession {
         (artifactCount > 0 && linkedFiles.length < artifactCount)
       );
 
-    if (needsDownloadClicks) {
+    if (needsDownloadClicks && this.page && !this.page.isClosed()) {
       clickedFiles = await this.clickDownloadLikeButtons(turnLocator, networkCapture);
       await sleep(500);
     }
@@ -2251,7 +2267,7 @@ export class ChatGPTWebSession {
           }
         }
 
-        await sleep(350);
+        await sleep(typeof options.onDelta === "function" ? this.streamPollMs : 350);
       }
 
       if (lastResult.text || lastResult.files.length) {

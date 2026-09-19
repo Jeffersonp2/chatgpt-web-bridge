@@ -26,6 +26,7 @@ const ENV_SETTINGS = [
   { key: "CHATGPT_HEADLESS", label: "Forçar headless real", type: "boolean", default: "false", group: "ChatGPT" },
   { key: "CHATGPT_BROWSER_CHANNEL", label: "Canal do navegador (chrome/chromium)", type: "text", default: "", group: "ChatGPT" },
   { key: "REQUEST_TIMEOUT_MS", label: "Timeout da resposta (ms)", type: "number", default: "600000", group: "ChatGPT", min: 1000 },
+  { key: "STREAM_POLL_MS", label: "Intervalo dos deltas da UI (ms)", type: "number", default: "200", group: "ChatGPT", min: 100, max: 1000 },
   { key: "REMOTE_BROWSER_CONTROL_ENABLED", label: "Controle pelo dashboard", type: "boolean", default: "true", group: "ChatGPT" },
   { key: "REMOTE_BROWSER_HIDDEN", label: "Ocultar janela do navegador", type: "boolean", default: "false", group: "ChatGPT" },
 
@@ -311,6 +312,7 @@ const chatgpt = new ChatGPTWebSession({
   hiddenWindow: WINDOWS_HIDDEN_HEADFUL,
   browserChannel: CHATGPT_BROWSER_CHANNEL,
   timeoutMs: process.env.REQUEST_TIMEOUT_MS || 600000,
+  streamPollMs: process.env.STREAM_POLL_MS || 200,
   historyMaxRecentMessages: process.env.HISTORY_MAX_RECENT_MESSAGES || 60,
   historyMaxRecentChars: process.env.HISTORY_MAX_RECENT_CHARS || 80000,
   historyMessageClipChars: process.env.HISTORY_MESSAGE_CLIP_CHARS || 1600,
@@ -909,6 +911,8 @@ app.get("/health", dashboardAuth, async (_req, res) => {
         base64_input: true,
         base64_output: true,
         incremental_streaming: true,
+        stream_granularity: "ui-delta",
+        stream_poll_ms: chatgpt.streamPollMs,
         parallel_tabs: true,
         model_modes: ["instant", "thinking", "pro"],
         local_api_key_enabled: Boolean(LOCAL_API_KEY),
@@ -1703,6 +1707,7 @@ app.post("/v1/chat/completions", upload.any(), async (req, res) => {
 
     if (body.stream === true) {
       res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("X-TesteGPT-Stream-Granularity", "ui-delta");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
       res.flushHeaders?.();
@@ -1855,6 +1860,7 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
 
     if (body.stream === true) {
       res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("X-TesteGPT-Stream-Granularity", "ui-delta");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
       res.flushHeaders?.();

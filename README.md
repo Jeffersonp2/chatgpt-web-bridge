@@ -491,6 +491,7 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 | `CHATGPT_HEADLESS` | `false` | Força headless real; normalmente deixe `false` no Windows |
 | `CHATGPT_BROWSER_CHANNEL` | vazio | Canal do navegador; no Windows vazio usa `chrome` automaticamente |
 | `REQUEST_TIMEOUT_MS` | `600000` | Timeout de uma resposta |
+| `STREAM_POLL_MS` | `200` | Intervalo de observação da UI no streaming (100–1000 ms) |
 | `JSON_LIMIT` | `50mb` | Limite do corpo JSON/base64 |
 | `MAX_UPLOAD_MB` | `40` | Limite por arquivo multipart |
 | `MAX_REMOTE_FILE_BYTES` | `26214400` | Limite de download por URL remota |
@@ -758,6 +759,8 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 - [ ] Ajustes contínuos quando a interface do ChatGPT mudar
 - [ ] Granularidade de streaming exatamente por token — o bridge transmite deltas reais da UI, cuja granularidade depende da renderização do ChatGPT Web
 
+A recuperação da aba ativa agora preserva uma aba separada para manter o Chromium aberto, inclusive após um download fechar a aba de conversa. Há testes com Chromium para downloads repetidos, recuperação da aba e duas estruturas de resposta da interface; o CI instala o navegador para executá-los. O streaming observa a UI a cada `STREAM_POLL_MS` quando solicitado e identifica a origem dos deltas com o cabeçalho `X-TesteGPT-Stream-Granularity: ui-delta`. Esses testes não substituem uma execução real com downloads na sua sessão do ChatGPT. Mudanças futuras da interface ainda podem exigir novos seletores.
+
 ---
 
 
@@ -766,6 +769,8 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 Com `stream: true`, o bridge não espera mais a resposta inteira para só então emitir um único evento. Ele observa o texto do turno do assistente enquanto a página é atualizada e envia apenas os deltas novos por SSE.
 
 > A transmissão é realmente incremental, mas a granularidade depende de como o ChatGPT Web atualiza o DOM. Portanto, um evento pode conter um ou vários tokens.
+
+O intervalo padrão de observação é 200 ms e pode ser ajustado com `STREAM_POLL_MS`. Reduzir esse valor aumenta a frequência de leitura da página, mas não transforma os deltas da UI nos tokens originais do modelo.
 
 Exemplo:
 
