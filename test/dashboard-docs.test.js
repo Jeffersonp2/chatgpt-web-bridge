@@ -34,9 +34,21 @@ test("dashboard endpoint buttons send requests and show responses", async (t) =>
         body: 'event: response.completed\ndata: {"type":"response.completed"}\n\n'
       });
     }
+    if (path === "/dashboard/browser/frame") {
+      return route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/MZkAAAAASUVORK5CYII=", "base64")
+      });
+    }
     return route.fulfill({ status: 200, contentType: "application/json", body: '{"output_text":"teste OK"}' });
   });
   await page.goto("http://dashboard.test/dashboard/docs");
+  const exampleCount = await page.locator("button[data-test]").count();
+  assert.ok(exampleCount >= 19);
+  assert.equal(await page.locator("button[data-test]").evaluateAll((buttons) =>
+    buttons.filter((button) => !button.closest("tr")?.querySelector(".example-cell")?.textContent.trim()).length
+  ), 0);
   await page.locator("#test-api-key").fill("local-test-key");
 
   await page.locator('button[data-test="models"]').click();
@@ -80,4 +92,15 @@ test("dashboard endpoint buttons send requests and show responses", async (t) =>
   assert.equal(calls[3].path, "/v1/audio/transcriptions");
   assert.match(calls[3].headers["content-type"], /multipart\/form-data/);
   assert.match(calls[3].body, /fala\.ogg/);
+
+  await page.waitForFunction(() => document.querySelector("#test-cancel").disabled);
+  await page.locator('button[data-test="dashboard-browser-focus"]').click();
+  await page.waitForFunction(() => document.querySelector("#test-cancel").disabled);
+  assert.equal(calls[4].path, "/dashboard/browser/action");
+  assert.deepEqual(JSON.parse(calls[4].body), { type: "focus", page: 0 });
+  assert.equal(calls[4].headers["x-api-key"], undefined);
+
+  await page.locator('button[data-test="dashboard-browser-frame"]').click();
+  await page.locator("#test-image").waitFor({ state: "visible" });
+  assert.match(await page.locator("#test-result").innerText(), /Imagem PNG recebida/);
 });

@@ -28,6 +28,7 @@
     button{border:1px solid #677a91;border-radius:7px;background:#253548;color:#edf0f3;padding:7px 11px;cursor:pointer;font:600 .88rem system-ui;white-space:nowrap}
     button:hover{background:#36506b}button:disabled{opacity:.55;cursor:wait}
     .result{max-height:430px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.test-status{font-weight:700}
+    .example-cell{min-width:260px;max-width:350px}.example-cell pre{margin:0;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem}
     @media(max-width:640px){h1{font-size:1.6rem}th,td{padding:8px}.bar{gap:9px}}
   </style>
 </head>
@@ -58,25 +59,52 @@
       <p><button id="test-cancel" type="button" disabled>Cancelar requisição</button> <span class="muted">Exclusão de sessão e nova conversa pedem confirmação.</span></p>
       <p id="test-status" class="test-status" role="status" aria-live="polite">Selecione um endpoint para testar.</p>
       <pre id="test-result" class="result" aria-label="Resposta do endpoint">A resposta aparecerá aqui.</pre>
+      <img id="test-image" alt="Imagem retornada pelo endpoint do navegador" hidden style="max-width:100%;border-radius:8px">
     </div>
-    <div class="scroll"><table><thead><tr><th>Método</th><th>Rota</th><th>Entrada e resultado</th><th>Teste</th></tr></thead><tbody>
-      <tr><td class="method">GET</td><td><code>/</code></td><td>Nome, versão e URLs do servidor.</td><td><button type="button" data-test="root">Executar</button></td></tr>
-      <tr><td class="method">GET</td><td><code>/health</code></td><td>Estado do navegador, sessões e recursos. Usa autenticação do dashboard.</td><td><button type="button" data-test="health">Executar</button></td></tr>
-      <tr><td class="method">GET</td><td><code>/login</code></td><td>Abre a tela de login do ChatGPT se necessário. Usa autenticação do dashboard.</td><td><button type="button" data-test="login">Abrir login</button></td></tr>
-      <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>Lista aliases de modelos disponíveis.</td><td><button type="button" data-test="models">Executar</button></td></tr>
-      <tr><td class="method">GET</td><td><code>/v1/models/:model</code></td><td>Consulta o alias selecionado acima; retorna 404 se não existir.</td><td><button type="button" data-test="model">Executar</button></td></tr>
-      <tr><td class="method">GET</td><td><code>/v1/sessions</code></td><td>Lista sessões atualmente abertas em memória.</td><td><button type="button" data-test="sessions">Executar</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/sessions</code></td><td>Cria ou abre a sessão informada acima. Retorna 201.</td><td><button type="button" data-test="create-session">Criar sessão</button></td></tr>
-      <tr><td class="method">DELETE</td><td><code>/v1/sessions/:sessionId</code></td><td>Fecha a sessão informada acima, diferente de <code>default</code>.</td><td><button type="button" data-test="delete-session">Fechar sessão</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/conversation/new</code></td><td>Abre conversa normal nova na sessão informada.</td><td><button type="button" data-test="new-conversation">Nova conversa</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>Envia a mensagem e, se escolhido, o arquivo. Mostra texto e <code>files[]</code>.</td><td><button type="button" data-test="chat">Enviar</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/responses</code></td><td>Envia o texto como <code>input</code>. Mostra <code>output[]</code>.</td><td><button type="button" data-test="responses">Enviar</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/audio/transcriptions</code></td><td>Exige arquivo de áudio selecionado acima; retorna <code>text</code>.</td><td><button type="button" data-test="transcription">Transcrever</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/audio/translations</code></td><td>Exige arquivo de áudio; pede tradução para inglês.</td><td><button type="button" data-test="translation">Traduzir</button></td></tr>
-      <tr><td class="method">POST</td><td><code>/v1/images/generations</code></td><td>Usa a mensagem acima como prompt para gerar imagem.</td><td><button type="button" data-test="image">Gerar</button></td></tr>
+    <div class="scroll"><table><thead><tr><th>Método</th><th>Rota</th><th>Entrada e resultado</th><th>Exemplo</th><th>Teste</th></tr></thead><tbody>
+      <tr><td class="method">GET</td><td><code>/</code></td><td>Nome, versão e URLs do servidor.</td><td class="example-cell"><pre>curl http://127.0.0.1:4310/</pre></td><td><button type="button" data-test="root">Executar</button></td></tr>
+      <tr><td class="method">GET</td><td><code>/health</code></td><td>Estado do navegador, sessões e recursos. Usa autenticação do dashboard.</td><td class="example-cell"><pre>GET /health
+Cookie: testegpt_dashboard=...</pre></td><td><button type="button" data-test="health">Executar</button></td></tr>
+      <tr><td class="method">GET</td><td><code>/login</code></td><td>Abre a tela de login do ChatGPT se necessário. Usa autenticação do dashboard.</td><td class="example-cell"><pre>GET /login
+Cookie: testegpt_dashboard=...</pre></td><td><button type="button" data-test="login">Abrir login</button></td></tr>
+      <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>Lista aliases de modelos disponíveis.</td><td class="example-cell"><pre>curl -H 'X-API-Key: SUA_CHAVE' http://127.0.0.1:4310/v1/models</pre></td><td><button type="button" data-test="models">Executar</button></td></tr>
+      <tr><td class="method">GET</td><td><code>/v1/models/:model</code></td><td>Consulta o alias selecionado acima; retorna 404 se não existir.</td><td class="example-cell"><pre>GET /v1/models/chatgpt-web-thinking</pre></td><td><button type="button" data-test="model">Executar</button></td></tr>
+      <tr><td class="method">GET</td><td><code>/v1/sessions</code></td><td>Lista sessões atualmente abertas em memória.</td><td class="example-cell"><pre>GET /v1/sessions
+X-API-Key: SUA_CHAVE</pre></td><td><button type="button" data-test="sessions">Executar</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/sessions</code></td><td>Cria ou abre a sessão informada acima. Retorna 201.</td><td class="example-cell"><pre>{"session_id":"dashboard-test"}</pre></td><td><button type="button" data-test="create-session">Criar sessão</button></td></tr>
+      <tr><td class="method">DELETE</td><td><code>/v1/sessions/:sessionId</code></td><td>Fecha a sessão informada acima, diferente de <code>default</code>.</td><td class="example-cell"><pre>DELETE /v1/sessions/dashboard-test</pre></td><td><button type="button" data-test="delete-session">Fechar sessão</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/conversation/new</code></td><td>Abre conversa normal nova na sessão informada.</td><td class="example-cell"><pre>{"session_id":"dashboard-test"}</pre></td><td><button type="button" data-test="new-conversation">Nova conversa</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>Envia a mensagem e, se escolhido, o arquivo. Mostra texto e <code>files[]</code>.</td><td class="example-cell"><pre>{"model":"chatgpt-web","messages":[{"role":"user","content":"Olá!"}]}</pre></td><td><button type="button" data-test="chat">Enviar</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/responses</code></td><td>Envia o texto como <code>input</code>. Mostra <code>output[]</code>.</td><td class="example-cell"><pre>{"model":"chatgpt-web","input":"Explique HTTP."}</pre></td><td><button type="button" data-test="responses">Enviar</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/audio/transcriptions</code></td><td>Exige arquivo de áudio selecionado acima; retorna <code>text</code>.</td><td class="example-cell"><pre>multipart/form-data
+file=@fala.ogg</pre></td><td><button type="button" data-test="transcription">Transcrever</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/audio/translations</code></td><td>Exige arquivo de áudio; pede tradução para inglês.</td><td class="example-cell"><pre>multipart/form-data
+file=@fala.ogg</pre></td><td><button type="button" data-test="translation">Traduzir</button></td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/images/generations</code></td><td>Usa a mensagem acima como prompt para gerar imagem.</td><td class="example-cell"><pre>{"prompt":"Uma paisagem em aquarela"}</pre></td><td><button type="button" data-test="image">Gerar</button></td></tr>
     </tbody></table></div>
     <p>As rotas <code>/v1/*</code> usam a chave da API. As rotas do dashboard usam o cookie do dashboard. <a href="https://github.com/Jeffersonp2/testeGPT/blob/main/docs/api.md" target="_blank" rel="noopener noreferrer">Referência HTTP detalhada</a>.</p>
-    <details><summary>Rotas auxiliares do dashboard</summary><p><code>GET /dashboard</code>, <code>GET/POST /dashboard/settings</code>, <code>GET /dashboard/browser</code>, <code>GET /dashboard/browser/state</code>, <code>GET /dashboard/browser/frame?page=0</code>, <code>POST /dashboard/browser/action</code>, <code>GET /dashboard/remote-status</code>, <code>GET /dashboard/login</code> e <code>GET /dashboard/logout</code>. O controle VNC usa <code>/novnc/*</code> e WebSocket <code>/dashboard/vnc</code> quando habilitado.</p></details>
+    <details id="dashboard-routes" open><summary>Rotas próprias do dashboard: exemplos e testes</summary>
+      <p>Estas rotas usam o cookie de <code>DASHBOARD_TOKEN</code>, estabelecido ao abrir <code>/dashboard?token=SEU_TOKEN</code>. Os botões de consulta mostram a resposta no painel acima; rotas visuais abrem sua página. A gravação de configurações é feita no formulário para evitar mudanças acidentais no <code>.env</code>.</p>
+      <div class="scroll"><table><thead><tr><th>Método</th><th>Rota</th><th>Exemplo</th><th>Teste</th></tr></thead><tbody>
+        <tr><td class="method">GET</td><td><code>/dashboard</code></td><td class="example-cell"><pre>GET /dashboard
+Cookie: testegpt_dashboard=...</pre></td><td><a href="/dashboard">Abrir</a></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/docs</code></td><td class="example-cell"><pre>GET /dashboard/docs</pre></td><td><a href="/dashboard/docs">Abrir</a></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/settings</code></td><td class="example-cell"><pre>GET /dashboard/settings</pre></td><td><a href="/dashboard/settings">Abrir editor</a></td></tr>
+        <tr><td class="method">POST</td><td><code>/dashboard/settings</code></td><td class="example-cell"><pre>form-urlencoded: PORT=4310
+Use o formulário do editor.</pre></td><td><a href="/dashboard/settings">Abrir editor</a></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/browser</code></td><td class="example-cell"><pre>GET /dashboard/browser</pre></td><td><a href="/dashboard/browser">Abrir controle</a></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/browser/state</code></td><td class="example-cell"><pre>GET /dashboard/browser/state</pre></td><td><button type="button" data-test="dashboard-browser-state">Executar</button></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/browser/frame?page=0</code></td><td class="example-cell"><pre>GET /dashboard/browser/frame?page=0
+Resposta: image/png</pre></td><td><button type="button" data-test="dashboard-browser-frame">Ver imagem</button></td></tr>
+        <tr><td class="method">POST</td><td><code>/dashboard/browser/action</code></td><td class="example-cell"><pre>{"type":"focus","page":0}</pre></td><td><button type="button" data-test="dashboard-browser-focus">Testar foco</button></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/remote-status</code></td><td class="example-cell"><pre>GET /dashboard/remote-status</pre></td><td><button type="button" data-test="dashboard-remote-status">Executar</button></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/login</code></td><td class="example-cell"><pre>GET /dashboard/login</pre></td><td><a href="/dashboard/login">Abrir VNC</a></td></tr>
+        <tr><td class="method">GET</td><td><code>/dashboard/logout</code></td><td class="example-cell"><pre>GET /dashboard/logout
+Remove o cookie.</pre></td><td><button type="button" data-test="dashboard-logout">Sair</button></td></tr>
+        <tr><td class="method">GET</td><td><code>/novnc/core/rfb.js</code></td><td class="example-cell"><pre>GET /novnc/core/rfb.js</pre></td><td><button type="button" data-test="dashboard-novnc">Executar</button></td></tr>
+        <tr><td class="method">WS</td><td><code>/dashboard/vnc</code></td><td class="example-cell"><pre>WebSocket wss://SEU_SERVIDOR/dashboard/vnc</pre></td><td><a href="/dashboard/login">Abrir VNC</a></td></tr>
+      </tbody></table></div>
+    </details>
   </section>
 
   <section id="exemplos" class="card">
@@ -153,9 +181,11 @@ const fields = {
 };
 const status = document.getElementById('test-status');
 const result = document.getElementById('test-result');
+const preview = document.getElementById('test-image');
 const cancelButton = document.getElementById('test-cancel');
 const testButtons = [...document.querySelectorAll('button[data-test]')];
 let currentController = null;
+let previewUrl = null;
 
 function requestFor(action) {
   const sessionId = fields.session.value.trim();
@@ -163,7 +193,8 @@ function requestFor(action) {
   const model = fields.model.value;
   const file = fields.file.files[0];
   const stream = fields.stream.checked;
-  const needsSession = !['root', 'health', 'login', 'models', 'model', 'sessions'].includes(action);
+  const needsSession = !['root', 'health', 'login', 'models', 'model', 'sessions'].includes(action)
+    && !action.startsWith('dashboard-');
   if (needsSession && !/^[A-Za-z0-9._-]{1,64}$/.test(sessionId)) {
     throw new Error('Informe um ID de sessão válido, com até 64 letras, números, ponto, _ ou -.');
   }
@@ -221,6 +252,16 @@ function requestFor(action) {
       if (!prompt) throw new Error('Digite um prompt para a imagem.');
       request.path = '/v1/images/generations'; request.method = 'POST';
       json({ model, session_id: sessionId, prompt }); break;
+    case 'dashboard-browser-state': request.path = '/dashboard/browser/state'; break;
+    case 'dashboard-browser-frame': request.path = '/dashboard/browser/frame?page=0'; break;
+    case 'dashboard-browser-focus':
+      request.path = '/dashboard/browser/action'; request.method = 'POST';
+      json({ type: 'focus', page: 0 }); break;
+    case 'dashboard-remote-status': request.path = '/dashboard/remote-status'; break;
+    case 'dashboard-novnc': request.path = '/novnc/core/rfb.js'; break;
+    case 'dashboard-logout':
+      if (!window.confirm('Sair do dashboard e remover o cookie de autenticação?')) return null;
+      request.path = '/dashboard/logout'; break;
     default: throw new Error('Teste desconhecido.');
   }
   if (request.path.startsWith('/v1/') && fields.key.value) {
@@ -247,6 +288,10 @@ async function runTest(action) {
   currentController = controller;
   testButtons.forEach(button => { button.disabled = true; });
   cancelButton.disabled = false;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = null;
+  preview.hidden = true;
+  preview.removeAttribute('src');
   status.textContent = request.method + ' ' + request.path + ' — aguardando resposta…';
   showText('Aguardando resposta…');
   const started = performance.now();
@@ -262,7 +307,13 @@ async function runTest(action) {
     const elapsed = () => ((performance.now() - started) / 1000).toFixed(1) + 's';
     const contentType = response.headers.get('content-type') || '';
     status.textContent = request.method + ' ' + request.path + ' — HTTP ' + response.status + ' (' + elapsed() + ')';
-    if (contentType.includes('text/event-stream') && response.body) {
+    if (contentType.includes('image/png')) {
+      const blob = await response.blob();
+      previewUrl = URL.createObjectURL(blob);
+      preview.src = previewUrl;
+      preview.hidden = false;
+      showText('Imagem PNG recebida (' + blob.size + ' bytes).');
+    } else if (contentType.includes('text/event-stream') && response.body) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let output = '';

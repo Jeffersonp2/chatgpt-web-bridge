@@ -37,7 +37,7 @@ Nos exemplos, substitua `SUA_CHAVE` quando a chave estiver configurada. O projet
 
 `GET /` devolve `name`, `version`, `api` e `dashboard`. `GET /health` consulta o navegador e devolve `ok`, `chatgpt`, `sessions`, `features` e `remote_login`; pode responder `503` quando a verificação falha. Quando `DASHBOARD_TOKEN` está configurado, `/health` requer o cookie do dashboard. Sem token, somente é acessível se `HOST` for loopback.
 
-O painel `/dashboard/docs` oferece botões para testar as rotas desta tabela e exibe status HTTP e corpo da resposta. Há campos para chave local, sessão, modelo, mensagem e arquivo. Chat e Responses podem ser testados com streaming SSE. O dashboard não grava a chave; ela permanece no campo até fechar ou recarregar a página. Respostas longas são truncadas na tela após 200.000 caracteres. Testes de geração enviam requisições reais ao ChatGPT Web.
+O painel `/dashboard/docs` apresenta um exemplo ao lado de cada botão de teste, incluindo as rotas próprias do dashboard. Os botões exibem status HTTP e corpo da resposta, ou a imagem quando a resposta é PNG. Há campos para chave local, sessão, modelo, mensagem e arquivo. Chat e Responses podem ser testados com streaming SSE. O dashboard não grava a chave; ela permanece no campo até fechar ou recarregar a página. Respostas longas são truncadas na tela após 200.000 caracteres. Testes de geração enviam requisições reais ao ChatGPT Web.
 
 ### Modelos e sessões
 
@@ -150,6 +150,19 @@ Essas rotas usam autenticação do dashboard, separada de `/v1`. Com token, abra
 | WS | `/dashboard/vnc` | WebSocket do noVNC, quando habilitado |
 
 `/dashboard/browser/action` recebe JSON com `type`: `click`, `dblclick`, `move` (campos `x`, `y`, opcional `button`), `scroll` (`deltaX`, `deltaY`), `type` (`text`), `key` (`key`), `reload`, `back`, `forward` ou `focus`. O campo `page` seleciona a aba. As rotas de controle retornam `503` quando desativadas.
+
+Exemplo de consulta e ação no navegador, após autenticar no dashboard (o navegador envia o cookie automaticamente):
+
+```http
+GET /dashboard/browser/state
+GET /dashboard/browser/frame?page=0
+POST /dashboard/browser/action
+Content-Type: application/json
+
+{"type":"focus","page":0}
+```
+
+O botão de `/dashboard/settings` abre o formulário para revisar e salvar as alterações; não grava o `.env` automaticamente. O botão de `/dashboard/logout` pede confirmação antes de remover o cookie.
 
 ## Limites e erros
 
