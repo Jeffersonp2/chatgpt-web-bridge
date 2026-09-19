@@ -483,7 +483,7 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 | `HOST` | `127.0.0.1` | Interface de rede |
 | `CHATGPT_PROFILE_DIR` | `.data/chatgpt-profile` | Perfil persistente |
 | `CHATGPT_HEADLESS` | `false` | Navegador visível/invisível |
-| `REQUEST_TIMEOUT_MS` | `180000` | Timeout de uma resposta |
+| `REQUEST_TIMEOUT_MS` | `600000` | Timeout de uma resposta |
 | `JSON_LIMIT` | `50mb` | Limite do corpo JSON/base64 |
 | `MAX_UPLOAD_MB` | `40` | Limite por arquivo multipart |
 | `MAX_REMOTE_FILE_BYTES` | `26214400` | Limite de download por URL remota |
@@ -741,6 +741,7 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 - [x] Login remoto do Chromium pelo dashboard em Linux
 - [x] Controle remoto do Chromium via Playwright em Windows/Linux
 - [x] Chromium oculto/headless com visualização somente pelo dashboard
+- [x] Heartbeat SSE para manter streams longos ativos durante períodos de raciocínio
 
 ### Ainda em estabilização
 
