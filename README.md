@@ -753,13 +753,13 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 - [x] Chromium oculto/headless com visualização somente pelo dashboard
 - [x] Heartbeat SSE para manter streams longos ativos durante períodos de raciocínio
 
-### Ainda em estabilização
+### Estado da estabilização
 
-- [ ] Ciclo de vida do Chromium após alguns downloads do ChatGPT Web
-- [ ] Ajustes contínuos quando a interface do ChatGPT mudar
-- [ ] Granularidade de streaming exatamente por token — o bridge transmite deltas reais da UI, cuja granularidade depende da renderização do ChatGPT Web
+- [x] **Ciclo de vida do Chromium após downloads:** a recuperação da aba ativa preserva uma aba separada para manter o navegador aberto. Testes com Chromium cobrem downloads repetidos e recuperação da conversa. Ainda falta observar o comportamento por mais tempo com uma sessão real do ChatGPT Web.
+- [x] **Variações conhecidas da interface:** seletores alternativos e testes cobrem duas estruturas de resposta. Mudanças futuras na página do ChatGPT podem exigir novos ajustes; isso é manutenção contínua.
+- [x] **Streaming por deltas da interface:** o bridge observa a UI no intervalo configurado por `STREAM_POLL_MS` e informa `X-TesteGPT-Stream-Granularity: ui-delta`. **Um evento por token não é garantido:** a interface não expõe os limites exatos dos tokens do modelo. Essa garantia exigiria uma API que fornecesse o streaming do modelo diretamente.
 
-A recuperação da aba ativa agora preserva uma aba separada para manter o Chromium aberto, inclusive após um download fechar a aba de conversa. Há testes com Chromium para downloads repetidos, recuperação da aba e duas estruturas de resposta da interface; o CI instala o navegador para executá-los. O streaming observa a UI a cada `STREAM_POLL_MS` quando solicitado e identifica a origem dos deltas com o cabeçalho `X-TesteGPT-Stream-Granularity: ui-delta`. Esses testes não substituem uma execução real com downloads na sua sessão do ChatGPT. Mudanças futuras da interface ainda podem exigir novos seletores.
+Os testes com Chromium também rodam no CI. Eles não substituem a validação de downloads e mídia na sua sessão autenticada do ChatGPT Web.
 
 ---
 
