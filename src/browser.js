@@ -1265,10 +1265,12 @@ export class ChatGPTWebSession {
 
         const body = await response.body();
         const headers = response.headers();
+        const responseMime =
+          String(headers["content-type"] || "").split(";")[0].trim() || null;
         const mimeType =
-          file.mime_type ||
-          String(headers["content-type"] || "").split(";")[0] ||
-          null;
+          (!file.mime_type || String(file.mime_type).endsWith("/*"))
+            ? (responseMime || file.mime_type || null)
+            : file.mime_type;
 
         enriched.push({
           ...file,
