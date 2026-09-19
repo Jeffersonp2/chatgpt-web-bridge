@@ -502,6 +502,7 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 | `REMOTE_LOGIN_WIDTH` | `1440` | Largura da tela virtual |
 | `REMOTE_LOGIN_HEIGHT` | `900` | Altura da tela virtual |
 | `REMOTE_LOGIN_USE_EXISTING_DISPLAY` | `false` | Permite reutilizar um display X11 já existente |
+| `REMOTE_BROWSER_CONTROL_ENABLED` | `true` | Ativa o controle remoto do Chromium via Playwright no dashboard (Windows/Linux) |
 
 > Recomenda-se manter `HOST=127.0.0.1`. Não exponha diretamente o bridge na internet sem autenticação, TLS e controles adicionais.
 
@@ -534,6 +535,48 @@ Continuar com Google / ChatGPT
       ↓
 cookies ficam no servidor
 ```
+
+### Windows — controle pelo Playwright
+
+No Windows não é necessário `Xvfb`, `x11vnc` ou noVNC. O dashboard pode controlar diretamente a página do Chromium via Playwright.
+
+No arquivo `.env`:
+
+```text
+HOST=0.0.0.0
+DASHBOARD_TOKEN=troque-por-um-token-forte
+REMOTE_BROWSER_CONTROL_ENABLED=true
+CHATGPT_HEADLESS=false
+```
+
+Depois:
+
+```powershell
+npm install
+npm start
+```
+
+Abra de outro equipamento:
+
+```text
+http://IP-DO-WINDOWS:4310/dashboard?token=SEU_TOKEN
+```
+
+No dashboard clique em:
+
+```text
+Controle pelo Playwright (Windows/Linux)
+```
+
+Essa tela mostra snapshots atualizados da página do Chromium e envia cliques, teclado e rolagem de volta para o Playwright. Se o login abrir uma nova aba/popup do Google, ela aparece na barra de abas do controle remoto.
+
+O perfil autenticado continua sendo salvo em:
+
+```text
+.data/chatgpt-profile/
+```
+
+> O controle pelo Playwright transporta eventos de teclado pelo próprio bridge. Eles não são gravados pelo projeto, mas trafegam até o servidor. Por isso, se você acessar o dashboard fora de uma LAN/VPN confiável, use HTTPS/TLS.
 
 ### Ubuntu / Debian
 
@@ -620,6 +663,7 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 - [x] Token local opcional
 - [x] Dashboard local
 - [x] Login remoto do Chromium pelo dashboard em Linux
+- [x] Controle remoto do Chromium via Playwright em Windows/Linux
 
 ### Ainda em estabilização
 
