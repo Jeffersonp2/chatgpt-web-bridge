@@ -2130,6 +2130,11 @@ export class ChatGPTWebSession {
           mode: options.mode,
           onDelta: options.onDelta
         });
+
+        if (this.isConversationPage()) {
+          this.rememberConversationUrl(this.page.url());
+        }
+
         this.recordMessage("assistant", this.assistantResultToHistoryText(result));
         return result;
       } catch (error) {
@@ -2153,6 +2158,11 @@ export class ChatGPTWebSession {
           mode: options.mode,
           onDelta: options.onDelta
         });
+
+        if (this.isConversationPage()) {
+          this.rememberConversationUrl(this.page.url());
+        }
+
         this.recordMessage("assistant", this.assistantResultToHistoryText(result));
         return result;
       }
