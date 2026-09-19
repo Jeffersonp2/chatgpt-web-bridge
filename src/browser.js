@@ -29,6 +29,7 @@ export class ChatGPTWebSession {
     this.relaunchTimer = null;
     this.pageRecoveryTimer = null;
     this.configuredPages = new WeakSet();
+    this.keeperPage = null;
     this.stopping = false;
   }
 
@@ -40,12 +41,25 @@ export class ChatGPTWebSession {
 
     page.on("close", () => {
       const wasActivePage = this.page === page;
+      const wasKeeperPage = this.keeperPage === page;
 
       if (wasActivePage) {
         this.page = null;
       }
 
+      if (wasKeeperPage) {
+        this.keeperPage = null;
+      }
+
       if (this.stopping) return;
+
+      if (wasKeeperPage) {
+        console.warn("[bridge] Keeper tab closed. Recreating safety tab...");
+        this.ensureKeeperPage().catch((error) => {
+          console.warn("[bridge] Could not recreate keeper tab:", error.message);
+        });
+        return;
+      }
 
       if (wasActivePage) {
         console.warn("[bridge] Active ChatGPT tab closed. Recovering tab...");
@@ -54,6 +68,21 @@ export class ChatGPTWebSession {
         console.warn("[bridge] Secondary browser tab closed.");
       }
     });
+  }
+
+  async ensureKeeperPage() {
+    if (this.stopping || !this.context) return null;
+
+    if (this.keeperPage && !this.keeperPage.isClosed()) {
+      return this.keeperPage;
+    }
+
+    const keeper = await this.context.newPage();
+    this.keeperPage = keeper;
+    this.configurePage(keeper);
+
+    await keeper.goto("about:blank").catch(() => {});
+    return keeper;
   }
 
   schedulePageRecovery() {
@@ -120,10 +149,22 @@ export class ChatGPTWebSession {
         try {
           const pages = this.context.pages().filter((page) => !page.isClosed());
 
+          if (!this.keeperPage || this.keeperPage.isClosed()) {
+            const blankPage = pages.find((page) => page.url() === "about:blank" && page !== this.page);
+            if (blankPage) {
+              this.keeperPage = blankPage;
+              this.configurePage(blankPage);
+            } else {
+              await this.ensureKeeperPage();
+            }
+          }
+
           if (!this.page || this.page.isClosed()) {
             this.page =
-              pages.find((page) => page.url().startsWith("https://chatgpt.com")) ||
-              pages[0] ||
+              pages.find((page) =>
+                page !== this.keeperPage &&
+                page.url().startsWith("https://chatgpt.com")
+              ) ||
               await this.context.newPage();
 
             this.configurePage(this.page);
@@ -158,6 +199,7 @@ export class ChatGPTWebSession {
             if (this.context === context) {
               this.context = null;
               this.page = null;
+              this.keeperPage = null;
             }
 
             if (this.pageRecoveryTimer) {
@@ -176,17 +218,32 @@ export class ChatGPTWebSession {
           }
 
           const pages = context.pages().filter((page) => !page.isClosed());
+          const initialBlank = pages.find((page) => page.url() === "about:blank");
+
+          if (initialBlank) {
+            this.keeperPage = initialBlank;
+            this.configurePage(initialBlank);
+          } else {
+            await this.ensureKeeperPage();
+          }
+
           this.page =
-            pages.find((page) => page.url().startsWith("https://chatgpt.com")) ||
-            pages[0] ||
+            pages.find((page) =>
+              page !== this.keeperPage &&
+              page.url().startsWith("https://chatgpt.com")
+            ) ||
             await context.newPage();
 
           this.configurePage(this.page);
 
           if (!this.page.url().startsWith("https://chatgpt.com")) {
-            await this.page.goto(CHATGPT_URL, { waitUntil: "domcontentloaded" });
+            await this.page.goto(
+              this.lastConversationUrl || CHATGPT_URL,
+              { waitUntil: "domcontentloaded" }
+            );
           }
 
+          await this.page.bringToFront().catch(() => {});
           return;
         } catch (error) {
           lastError = error;
@@ -225,6 +282,7 @@ export class ChatGPTWebSession {
     const context = this.context;
     this.context = null;
     this.page = null;
+    this.keeperPage = null;
 
     await context?.close().catch(() => {});
   }
