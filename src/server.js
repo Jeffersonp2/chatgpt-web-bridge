@@ -854,6 +854,20 @@ const sseChunk = (res, payload) => {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 };
 
+const startSseHeartbeat = (res, intervalMs = 10000) => {
+  const timer = setInterval(() => {
+    if (res.writableEnded || res.destroyed) return;
+    try {
+      // Valid SSE comment. Keeps proxies/routers from treating a quiet
+      // reasoning period as a stalled stream, without creating a client event.
+      res.write(`: keepalive ${Date.now()}\n\n`);
+    } catch {}
+  }, intervalMs);
+
+  timer.unref?.();
+  return () => clearInterval(timer);
+};
+
 app.get("/", (_req, res) => {
   res.json({
     name: "testeGPT Local Bridge",
@@ -1674,6 +1688,7 @@ app.post("/v1/chat/completions", upload.any(), async (req, res) => {
       res.flushHeaders?.();
 
       let streamedText = "";
+      const stopHeartbeat = startSseHeartbeat(res);
 
       sseChunk(res, {
         id: completionId,
@@ -1744,8 +1759,10 @@ app.post("/v1/chat/completions", upload.any(), async (req, res) => {
           model,
           choices: [{ index: 0, delta: {}, finish_reason: "stop" }]
         });
+        stopHeartbeat();
         res.end("data: [DONE]\n\n");
       } catch (error) {
+        stopHeartbeat();
         sseChunk(res, errorShape(error).payload);
         res.end("data: [DONE]\n\n");
       }
@@ -1822,6 +1839,7 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
       res.flushHeaders?.();
 
       let streamedText = "";
+      const stopHeartbeat = startSseHeartbeat(res);
 
       sseChunk(res, {
         type: "response.created",
@@ -1876,8 +1894,10 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
             url: files.find((file) => file?.url)?.url || null
           }
         });
+        stopHeartbeat();
         res.end();
       } catch (error) {
+        stopHeartbeat();
         sseChunk(res, { type: "error", ...errorShape(error).payload });
         res.end();
       }
