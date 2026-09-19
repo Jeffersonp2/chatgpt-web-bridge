@@ -24,6 +24,8 @@ const REMOTE_LOGIN_ENABLED =
   String(process.env.REMOTE_LOGIN_ENABLED || "false").toLowerCase() === "true";
 const REMOTE_BROWSER_CONTROL_ENABLED =
   String(process.env.REMOTE_BROWSER_CONTROL_ENABLED || "true").toLowerCase() !== "false";
+const REMOTE_BROWSER_HIDDEN =
+  String(process.env.REMOTE_BROWSER_HIDDEN || "false").toLowerCase() === "true";
 const REMOTE_LOGIN_DISPLAY = String(process.env.REMOTE_LOGIN_DISPLAY || ":99");
 const REMOTE_LOGIN_RFB_PORT = Number(process.env.REMOTE_LOGIN_RFB_PORT || 5900);
 const REMOTE_LOGIN_WIDTH = Number(process.env.REMOTE_LOGIN_WIDTH || 1440);
@@ -79,11 +81,17 @@ const upload = multer({
   }
 });
 
+const CHATGPT_HEADLESS =
+  String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true";
+
+const EFFECTIVE_CHATGPT_HEADLESS =
+  REMOTE_LOGIN_ENABLED
+    ? false
+    : (REMOTE_BROWSER_HIDDEN || CHATGPT_HEADLESS);
+
 const chatgpt = new ChatGPTWebSession({
   profileDir: process.env.CHATGPT_PROFILE_DIR || ".data/chatgpt-profile",
-  headless: REMOTE_LOGIN_ENABLED
-    ? false
-    : String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true",
+  headless: EFFECTIVE_CHATGPT_HEADLESS,
   timeoutMs: process.env.REQUEST_TIMEOUT_MS || 180000,
   historyMaxRecentMessages: process.env.HISTORY_MAX_RECENT_MESSAGES || 60,
   historyMaxRecentChars: process.env.HISTORY_MAX_RECENT_CHARS || 80000,
@@ -682,7 +690,9 @@ app.get("/health", async (_req, res) => {
         model_modes: ["instant", "thinking", "pro"],
         local_api_key_enabled: Boolean(LOCAL_API_KEY),
         remote_dashboard_login: REMOTE_LOGIN_ENABLED,
-        remote_browser_control: REMOTE_BROWSER_CONTROL_ENABLED
+        remote_browser_control: REMOTE_BROWSER_CONTROL_ENABLED,
+        remote_browser_hidden: REMOTE_BROWSER_HIDDEN,
+        browser_headless_effective: EFFECTIVE_CHATGPT_HEADLESS
       },
       remote_login: {
         ...remoteLogin.status(),
@@ -722,7 +732,7 @@ a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#ee
   <p id="remote-summary">carregando...</p>
   <a class="button" href="/dashboard/browser">Controle pelo Playwright (Windows/Linux)</a>
   <a class="button" href="/dashboard/login">Tela VNC (Linux)</a>
-  <p class="muted">No Windows use o controle pelo Playwright. No Linux você pode usar o mesmo controle ou a tela VNC.</p>
+  <p class="muted">No Windows use o controle pelo Playwright. Com REMOTE_BROWSER_HIDDEN=true, o Chromium não abre janela no servidor e continua visível aqui pelo dashboard.</p>
 </div>
 <div class="card"><h2>Status</h2><pre id="status">carregando...</pre></div>
 <script>
@@ -1641,6 +1651,9 @@ app.use((error, _req, res, next) => {
 
 const server = app.listen(PORT, HOST, async () => {
   console.log(`testeGPT listening on http://${HOST}:${PORT}`);
+  console.log(
+    `[browser] Chromium mode: ${EFFECTIVE_CHATGPT_HEADLESS ? "hidden/headless" : "visible"}`
+  );
 
   const dashboardUrls = dashboardNetworkUrls();
   if (dashboardUrls.length) {
