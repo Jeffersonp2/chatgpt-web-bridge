@@ -27,12 +27,15 @@ export class ChatGPTWebSession {
     this.lastConversationUrl = null;
     this.startPromise = null;
     this.relaunchTimer = null;
+    this.pageRecoveryTimer = null;
+    this.configuredPages = new WeakSet();
     this.stopping = false;
   }
 
   configurePage(page) {
-    if (!page) return;
+    if (!page || this.configuredPages.has(page)) return;
 
+    this.configuredPages.add(page);
     page.setDefaultTimeout(30000);
 
     page.on("close", () => {
@@ -42,15 +45,53 @@ export class ChatGPTWebSession {
         this.page = null;
       }
 
-      if (!this.stopping) {
-        console.warn(
-          wasActivePage
-            ? "[bridge] Active ChatGPT tab closed. Recovering..."
-            : "[bridge] A browser tab closed."
-        );
-        this.scheduleBrowserRecovery();
+      if (this.stopping) return;
+
+      if (wasActivePage) {
+        console.warn("[bridge] Active ChatGPT tab closed. Recovering tab...");
+        this.schedulePageRecovery();
+      } else {
+        console.warn("[bridge] Secondary browser tab closed.");
       }
     });
+  }
+
+  schedulePageRecovery() {
+    if (this.stopping || this.pageRecoveryTimer) return;
+
+    this.pageRecoveryTimer = setTimeout(async () => {
+      this.pageRecoveryTimer = null;
+      if (this.stopping || this.page) return;
+
+      const context = this.context;
+      if (!context) {
+        this.scheduleBrowserRecovery();
+        return;
+      }
+
+      try {
+        const pages = context.pages().filter((page) => !page.isClosed());
+        const existing =
+          pages.find((page) => page.url().startsWith("https://chatgpt.com")) ||
+          pages[0];
+
+        const recoveredPage = existing || await context.newPage();
+        this.configurePage(recoveredPage);
+        this.page = recoveredPage;
+
+        const recoveryUrl = this.lastConversationUrl || CHATGPT_URL;
+        if (!recoveredPage.url().startsWith("https://chatgpt.com")) {
+          await recoveredPage.goto(recoveryUrl, { waitUntil: "domcontentloaded" });
+        }
+
+        console.log("[bridge] ChatGPT tab recovered without restarting Chromium.");
+      } catch (error) {
+        console.warn("[bridge] Tab recovery failed:", error.message);
+        this.context = null;
+        this.page = null;
+        this.scheduleBrowserRecovery();
+      }
+    }, 500);
   }
 
   scheduleBrowserRecovery() {
@@ -63,7 +104,7 @@ export class ChatGPTWebSession {
         console.error("Could not automatically recover ChatGPT browser:", error.message);
         this.scheduleBrowserRecovery();
       });
-    }, 1000);
+    }, 1200);
   }
 
   async start() {
@@ -109,10 +150,19 @@ export class ChatGPTWebSession {
 
           this.context = context;
 
+          context.on("page", (page) => {
+            this.configurePage(page);
+          });
+
           context.on("close", () => {
             if (this.context === context) {
               this.context = null;
               this.page = null;
+            }
+
+            if (this.pageRecoveryTimer) {
+              clearTimeout(this.pageRecoveryTimer);
+              this.pageRecoveryTimer = null;
             }
 
             if (!this.stopping) {
@@ -165,6 +215,11 @@ export class ChatGPTWebSession {
     if (this.relaunchTimer) {
       clearTimeout(this.relaunchTimer);
       this.relaunchTimer = null;
+    }
+
+    if (this.pageRecoveryTimer) {
+      clearTimeout(this.pageRecoveryTimer);
+      this.pageRecoveryTimer = null;
     }
 
     const context = this.context;
