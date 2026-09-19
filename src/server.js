@@ -70,7 +70,9 @@ const upload = multer({
 
 const chatgpt = new ChatGPTWebSession({
   profileDir: process.env.CHATGPT_PROFILE_DIR || ".data/chatgpt-profile",
-  headless: String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true",
+  headless: REMOTE_LOGIN_ENABLED
+    ? false
+    : String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true",
   timeoutMs: process.env.REQUEST_TIMEOUT_MS || 180000,
   historyMaxRecentMessages: process.env.HISTORY_MAX_RECENT_MESSAGES || 60,
   historyMaxRecentChars: process.env.HISTORY_MAX_RECENT_CHARS || 80000,
@@ -130,6 +132,12 @@ const dashboardRequestAuthorized = (req) => {
 const dashboardAuth = (req, res, next) => {
   if (!DASHBOARD_TOKEN && isLoopbackHost(HOST)) {
     return next();
+  }
+
+  if (!DASHBOARD_TOKEN) {
+    return res.status(403).type("html").send(
+      "<h1>Dashboard bloqueado</h1><p>Como o servidor está exposto na rede, configure <code>DASHBOARD_TOKEN</code> e reinicie.</p>"
+    );
   }
 
   const queryToken = String(req.query?.token || "");
@@ -634,7 +642,13 @@ app.get("/health", async (_req, res) => {
         incremental_streaming: true,
         parallel_tabs: true,
         model_modes: ["instant", "thinking", "pro"],
-        local_api_key_enabled: Boolean(LOCAL_API_KEY)
+        local_api_key_enabled: Boolean(LOCAL_API_KEY),
+        remote_dashboard_login: REMOTE_LOGIN_ENABLED
+      },
+      remote_login: {
+        ...remoteLogin.status(),
+        security_ok: REMOTE_LOGIN_SECURITY_OK,
+        novnc_available: Boolean(NOVNC_DIR)
       }
     });
   } catch (error) {
@@ -1321,6 +1335,25 @@ const server = app.listen(PORT, HOST, async () => {
   console.log(`testeGPT listening on http://${HOST}:${PORT}`);
   console.log(`Dashboard: http://${HOST}:${PORT}/dashboard`);
 
+  if (REMOTE_LOGIN_ENABLED) {
+    if (!REMOTE_LOGIN_SECURITY_OK) {
+      remoteLogin.lastError =
+        "Set DASHBOARD_TOKEN before enabling remote login on a non-loopback HOST.";
+      console.error("[remote-login]", remoteLogin.lastError);
+      return;
+    }
+
+    const remoteState = await remoteLogin.ensureDisplay();
+    if (!remoteState.ready) {
+      console.error("[remote-login]", remoteState.error || "Remote login display is not ready.");
+      return;
+    }
+
+    console.log(
+      `[remote-login] Dashboard browser access: http://${HOST}:${PORT}/dashboard/login`
+    );
+  }
+
   try {
     const state = await chatgpt.openLoginIfNeeded();
 
@@ -1334,6 +1367,10 @@ const server = app.listen(PORT, HOST, async () => {
   }
 });
 
+remoteLogin.installWebSocketProxy(server, {
+  isAuthorized: dashboardRequestAuthorized
+});
+
 const shutdown = async () => {
   server.close();
 
@@ -1343,6 +1380,7 @@ const shutdown = async () => {
 
   await Promise.allSettled(secondary);
   await chatgpt.stop();
+  await remoteLogin.stop();
   process.exit(0);
 };
 
