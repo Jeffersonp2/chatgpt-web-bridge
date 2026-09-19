@@ -36,11 +36,18 @@ export class ChatGPTWebSession {
     page.setDefaultTimeout(30000);
 
     page.on("close", () => {
-      if (this.page === page) {
+      const wasActivePage = this.page === page;
+
+      if (wasActivePage) {
         this.page = null;
       }
 
       if (!this.stopping) {
+        console.warn(
+          wasActivePage
+            ? "[bridge] Active ChatGPT tab closed. Recovering..."
+            : "[bridge] A browser tab closed."
+        );
         this.scheduleBrowserRecovery();
       }
     });
@@ -109,6 +116,7 @@ export class ChatGPTWebSession {
             }
 
             if (!this.stopping) {
+              console.warn("[bridge] Chromium context closed. Relaunching...");
               this.scheduleBrowserRecovery();
             }
           });
@@ -672,6 +680,11 @@ export class ChatGPTWebSession {
 
   createNetworkCapture() {
     const captured = new Map();
+    const capturePage = this.page;
+
+    if (!capturePage || capturePage.isClosed()) {
+      throw new Error("ChatGPT page closed before network capture could start.");
+    }
 
     const add = (url, meta = {}, force = false) => {
       if (!url || (!force && !this.isLikelyFileUrl(url))) return;
@@ -715,15 +728,17 @@ export class ChatGPTWebSession {
       } catch {}
     };
 
-    this.page.on("request", onRequest);
-    this.page.on("response", onResponse);
+    capturePage.on("request", onRequest);
+    capturePage.on("response", onResponse);
 
     return {
       files: () => [...captured.values()].map((entry) => this.candidateFromUrl(entry.url, entry)),
       urls: () => new Set(captured.keys()),
       stop: () => {
-        this.page.off("request", onRequest);
-        this.page.off("response", onResponse);
+        try {
+          capturePage.off("request", onRequest);
+          capturePage.off("response", onResponse);
+        } catch {}
       }
     };
   }
@@ -895,11 +910,17 @@ export class ChatGPTWebSession {
       clickedLabels.add(clickKey);
 
       const beforeUrls = networkCapture.urls();
+      const actionPage = this.page;
+
+      if (!actionPage || actionPage.isClosed()) {
+        break;
+      }
+
       const returnUrl = this.isConversationPage()
-        ? this.page.url()
+        ? actionPage.url()
         : this.lastConversationUrl;
 
-      const downloadPromise = this.page
+      const downloadPromise = actionPage
         .waitForEvent("download", { timeout: 12000 })
         .catch(() => null);
 
@@ -952,8 +973,14 @@ export class ChatGPTWebSession {
       const afterFiles = networkCapture.files();
       const newFiles = afterFiles.filter((file) => file.url && !beforeUrls.has(file.url));
 
-      if (returnUrl && this.page.url() !== returnUrl) {
-        await this.page.goto(returnUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+      const currentPage = this.page;
+      if (
+        returnUrl &&
+        currentPage &&
+        !currentPage.isClosed() &&
+        currentPage.url() !== returnUrl
+      ) {
+        await currentPage.goto(returnUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
         await sleep(500);
       }
 
