@@ -569,6 +569,12 @@ Depois:
 npm start
 ```
 
+Quando `HOST=0.0.0.0`, o servidor tenta listar no terminal os endereços IPv4 alcançáveis do dashboard, por exemplo:
+
+```text
+Dashboard: http://192.168.1.50:4310/dashboard
+```
+
 De outro equipamento na mesma rede, abra:
 
 ```text
