@@ -717,6 +717,125 @@ export class ChatGPTWebSession {
     };
   }
 
+  remoteBrowserPages() {
+    if (!this.context) return [];
+
+    return this.context.pages()
+      .filter((page) => page && !page.isClosed() && page !== this.keeperPage);
+  }
+
+  async remoteBrowserState() {
+    await this.start();
+
+    const pages = this.remoteBrowserPages();
+    const data = [];
+
+    for (let index = 0; index < pages.length; index += 1) {
+      const page = pages[index];
+      data.push({
+        index,
+        url: page.url(),
+        title: await page.title().catch(() => ""),
+        active: page === this.page
+      });
+    }
+
+    return {
+      pages: data,
+      active_index: Math.max(0, pages.indexOf(this.page)),
+      viewport: this.page?.viewportSize?.() || { width: 1440, height: 980 }
+    };
+  }
+
+  remoteBrowserPage(index = null) {
+    const pages = this.remoteBrowserPages();
+    if (!pages.length) return null;
+
+    if (Number.isInteger(index) && index >= 0 && index < pages.length) {
+      return pages[index];
+    }
+
+    return pages.includes(this.page) ? this.page : pages[pages.length - 1];
+  }
+
+  async remoteBrowserScreenshot(index = null) {
+    await this.start();
+
+    const page = this.remoteBrowserPage(index);
+    if (!page) {
+      throw new Error("No browser page is available.");
+    }
+
+    await page.bringToFront().catch(() => {});
+    return await page.screenshot({
+      type: "png",
+      animations: "disabled"
+    });
+  }
+
+  async remoteBrowserAction(action = {}) {
+    await this.start();
+
+    const pageIndex = Number.isFinite(Number(action.page))
+      ? Number(action.page)
+      : null;
+    const page = this.remoteBrowserPage(pageIndex);
+
+    if (!page) {
+      throw new Error("No browser page is available.");
+    }
+
+    const type = String(action.type || "").toLowerCase();
+
+    if (type === "click" || type === "dblclick") {
+      const x = Number(action.x);
+      const y = Number(action.y);
+
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new Error("click requires numeric x and y.");
+      }
+
+      await page.mouse.click(x, y, {
+        clickCount: type === "dblclick" ? 2 : 1,
+        button: action.button === "right" ? "right" : "left"
+      });
+    } else if (type === "move") {
+      const x = Number(action.x);
+      const y = Number(action.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new Error("move requires numeric x and y.");
+      }
+      await page.mouse.move(x, y);
+    } else if (type === "scroll") {
+      await page.mouse.wheel(
+        Number(action.deltaX || 0),
+        Number(action.deltaY || 0)
+      );
+    } else if (type === "type") {
+      await page.keyboard.insertText(String(action.text || ""));
+    } else if (type === "key") {
+      const key = String(action.key || "").trim();
+      if (!key) throw new Error("key action requires a key.");
+      await page.keyboard.press(key);
+    } else if (type === "reload") {
+      await page.reload({ waitUntil: "domcontentloaded" });
+    } else if (type === "back") {
+      await page.goBack({ waitUntil: "domcontentloaded" }).catch(() => {});
+    } else if (type === "forward") {
+      await page.goForward({ waitUntil: "domcontentloaded" }).catch(() => {});
+    } else if (type === "focus") {
+      await page.bringToFront().catch(() => {});
+    } else {
+      throw new Error("Unsupported remote browser action.");
+    }
+
+    return {
+      ok: true,
+      page: pageIndex,
+      url: page.url()
+    };
+  }
+
   async findComposer({ timeout = 30000 } = {}) {
     const selectors = [
       "#prompt-textarea",
