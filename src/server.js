@@ -214,6 +214,7 @@ const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
 const DASHBOARD_TOKEN = String(process.env.DASHBOARD_TOKEN || "").trim();
 const REMOTE_LOGIN_ENABLED =
   String(process.env.REMOTE_LOGIN_ENABLED || "false").toLowerCase() === "true";
+const REMOTE_LOGIN_ACTIVE = REMOTE_LOGIN_ENABLED && process.platform === "linux";
 const REMOTE_BROWSER_CONTROL_ENABLED =
   String(process.env.REMOTE_BROWSER_CONTROL_ENABLED || "true").toLowerCase() !== "false";
 const REMOTE_BROWSER_HIDDEN =
@@ -239,7 +240,7 @@ try {
 }
 
 const remoteLogin = new RemoteLoginManager({
-  enabled: REMOTE_LOGIN_ENABLED,
+  enabled: REMOTE_LOGIN_ACTIVE,
   display: REMOTE_LOGIN_DISPLAY,
   rfbPort: REMOTE_LOGIN_RFB_PORT,
   width: REMOTE_LOGIN_WIDTH,
@@ -278,7 +279,7 @@ const CHATGPT_HEADLESS =
   String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true";
 
 const EFFECTIVE_CHATGPT_HEADLESS =
-  REMOTE_LOGIN_ENABLED
+  REMOTE_LOGIN_ACTIVE
     ? false
     : (REMOTE_BROWSER_HIDDEN || CHATGPT_HEADLESS);
 
@@ -332,7 +333,7 @@ const dashboardNetworkUrls = () => {
 };
 
 const REMOTE_LOGIN_SECURITY_OK =
-  !REMOTE_LOGIN_ENABLED ||
+  !REMOTE_LOGIN_ACTIVE ||
   isLoopbackHost(HOST) ||
   Boolean(DASHBOARD_TOKEN);
 
@@ -896,7 +897,8 @@ app.get("/health", async (_req, res) => {
         parallel_tabs: true,
         model_modes: ["instant", "thinking", "pro"],
         local_api_key_enabled: Boolean(LOCAL_API_KEY),
-        remote_dashboard_login: REMOTE_LOGIN_ENABLED,
+        remote_dashboard_login: REMOTE_LOGIN_ACTIVE,
+        remote_dashboard_login_configured: REMOTE_LOGIN_ENABLED,
         remote_browser_control: REMOTE_BROWSER_CONTROL_ENABLED,
         remote_browser_hidden: REMOTE_BROWSER_HIDDEN,
         browser_headless_effective: EFFECTIVE_CHATGPT_HEADLESS
@@ -1474,13 +1476,14 @@ app.get("/dashboard/remote-status", dashboardAuth, (_req, res) => {
   res.json({
     ...remoteLogin.status(),
     configured: REMOTE_LOGIN_ENABLED,
+    active: REMOTE_LOGIN_ACTIVE,
     security_ok: REMOTE_LOGIN_SECURITY_OK,
     novnc_available: Boolean(NOVNC_DIR)
   });
 });
 
 app.get("/dashboard/login", dashboardAuth, async (_req, res) => {
-  if (!REMOTE_LOGIN_ENABLED) {
+  if (!REMOTE_LOGIN_ACTIVE) {
     return res.status(503).type("html").send(
       "<h1>Login remoto desativado</h1><p>Configure REMOTE_LOGIN_ENABLED=true e reinicie o servidor.</p>"
     );
@@ -2102,7 +2105,13 @@ const server = app.listen(PORT, HOST, async () => {
     console.log(`Dashboard: http://${HOST}:${PORT}/dashboard`);
   }
 
-  if (REMOTE_LOGIN_ENABLED) {
+  if (REMOTE_LOGIN_ENABLED && !REMOTE_LOGIN_ACTIVE) {
+    console.warn(
+      "[remote-login] REMOTE_LOGIN_ENABLED=true ignored on this platform; using Playwright dashboard control instead."
+    );
+  }
+
+  if (REMOTE_LOGIN_ACTIVE) {
     if (!REMOTE_LOGIN_SECURITY_OK) {
       remoteLogin.lastError =
         "Set DASHBOARD_TOKEN before enabling remote login on a non-loopback HOST.";
