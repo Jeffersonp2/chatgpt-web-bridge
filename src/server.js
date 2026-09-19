@@ -642,7 +642,11 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.get("/dashboard", (_req, res) => {
+if (NOVNC_DIR) {
+  app.use("/novnc", dashboardAuth, express.static(NOVNC_DIR));
+}
+
+app.get("/dashboard", dashboardAuth, (_req, res) => {
   res.type("html").send(`<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -652,19 +656,46 @@ app.get("/dashboard", (_req, res) => {
 <style>
 body{font-family:system-ui,sans-serif;max-width:980px;margin:40px auto;padding:0 20px;background:#111;color:#eee}
 .card{background:#1b1b1b;border:1px solid #333;border-radius:14px;padding:18px;margin:14px 0}
-.ok{color:#65d48a}.bad{color:#ff7b7b}code,pre{background:#090909;border-radius:8px;padding:10px;overflow:auto}
+.ok{color:#65d48a}.bad{color:#ff7b7b}.muted{color:#aaa}
+code,pre{background:#090909;border-radius:8px;padding:10px;overflow:auto}
+a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#eee;color:#111;text-decoration:none;font-weight:650;margin-right:8px}
 </style>
 </head>
 <body>
 <h1>testeGPT Local Bridge</h1>
 <div class="card"><strong>API:</strong> http://127.0.0.1:${PORT}/v1</div>
+<div class="card">
+  <h2>Login remoto</h2>
+  <p id="remote-summary">carregando...</p>
+  <a class="button" href="/dashboard/login">Abrir Chromium do servidor</a>
+  <p class="muted">O login acontece dentro do Chromium que roda no servidor. O dashboard não recebe sua senha do Google/ChatGPT.</p>
+</div>
 <div class="card"><h2>Status</h2><pre id="status">carregando...</pre></div>
 <script>
 async function refresh(){
   try{
-    const r=await fetch('/health',{cache:'no-store'});
-    const j=await r.json();
-    document.getElementById('status').textContent=JSON.stringify(j,null,2);
+    const [healthResponse, remoteResponse] = await Promise.all([
+      fetch('/health',{cache:'no-store'}),
+      fetch('/dashboard/remote-status',{cache:'no-store'})
+    ]);
+    const health = await healthResponse.json();
+    const remote = await remoteResponse.json();
+    document.getElementById('status').textContent = JSON.stringify({health, remote_login: remote}, null, 2);
+
+    const summary = document.getElementById('remote-summary');
+    if (!remote.enabled) {
+      summary.textContent = 'Desativado. Configure REMOTE_LOGIN_ENABLED=true.';
+      summary.className = 'bad';
+    } else if (!remote.security_ok) {
+      summary.textContent = 'Bloqueado por segurança: defina DASHBOARD_TOKEN antes de expor o dashboard na rede.';
+      summary.className = 'bad';
+    } else if (remote.ready) {
+      summary.textContent = 'Pronto. Clique no botão para controlar o Chromium do servidor.';
+      summary.className = 'ok';
+    } else {
+      summary.textContent = remote.error || 'Ainda não está pronto.';
+      summary.className = 'bad';
+    }
   }catch(e){
     document.getElementById('status').textContent=String(e);
   }
@@ -673,6 +704,107 @@ refresh(); setInterval(refresh,3000);
 </script>
 </body>
 </html>`);
+});
+
+app.get("/dashboard/remote-status", dashboardAuth, (_req, res) => {
+  res.json({
+    ...remoteLogin.status(),
+    configured: REMOTE_LOGIN_ENABLED,
+    security_ok: REMOTE_LOGIN_SECURITY_OK,
+    novnc_available: Boolean(NOVNC_DIR)
+  });
+});
+
+app.get("/dashboard/login", dashboardAuth, async (_req, res) => {
+  if (!REMOTE_LOGIN_ENABLED) {
+    return res.status(503).type("html").send(
+      "<h1>Login remoto desativado</h1><p>Configure REMOTE_LOGIN_ENABLED=true e reinicie o servidor.</p>"
+    );
+  }
+
+  if (!REMOTE_LOGIN_SECURITY_OK) {
+    return res.status(403).type("html").send(
+      "<h1>Login remoto bloqueado</h1><p>Defina DASHBOARD_TOKEN antes de expor o servidor na rede.</p>"
+    );
+  }
+
+  if (!NOVNC_DIR) {
+    return res.status(503).type("html").send(
+      "<h1>noVNC não instalado</h1><p>Execute npm install e reinicie o servidor.</p>"
+    );
+  }
+
+  const remoteState = await remoteLogin.ensureDisplay();
+  if (!remoteState.ready) {
+    return res.status(503).type("html").send(
+      `<h1>Login remoto indisponível</h1><pre>${String(remoteState.error || "erro desconhecido")}</pre><p>Em Ubuntu/Debian execute: <code>npm run install:remote-login</code></p>`
+    );
+  }
+
+  try {
+    await chatgpt.openLoginIfNeeded();
+  } catch {}
+
+  res.type("html").send(`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>testeGPT - Login remoto</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#111;color:#eee;font-family:system-ui,sans-serif;overflow:hidden}
+#bar{height:48px;box-sizing:border-box;padding:10px 14px;background:#1b1b1b;border-bottom:1px solid #333;display:flex;gap:14px;align-items:center}
+#screen{width:100%;height:calc(100% - 48px);overflow:hidden;background:#000}
+#status{margin-left:auto;color:#aaa}
+a{color:#fff}
+</style>
+</head>
+<body>
+<div id="bar">
+  <strong>Chromium do servidor</strong>
+  <a href="/dashboard">← Dashboard</a>
+  <span id="status">conectando...</span>
+</div>
+<div id="screen"></div>
+<script type="module">
+import RFB from "/novnc/core/rfb.js";
+
+const status = document.getElementById("status");
+const screen = document.getElementById("screen");
+const scheme = location.protocol === "https:" ? "wss" : "ws";
+const url = scheme + "://" + location.host + "/dashboard/vnc";
+const rfb = new RFB(screen, url, { shared: true });
+
+rfb.scaleViewport = true;
+rfb.resizeSession = true;
+rfb.viewOnly = false;
+rfb.focusOnClick = true;
+
+rfb.addEventListener("connect", () => {
+  status.textContent = "conectado";
+  status.style.color = "#65d48a";
+});
+
+rfb.addEventListener("disconnect", (event) => {
+  status.textContent = event.detail.clean ? "desconectado" : "conexão perdida";
+  status.style.color = "#ff7b7b";
+});
+
+rfb.addEventListener("securityfailure", () => {
+  status.textContent = "falha de segurança";
+  status.style.color = "#ff7b7b";
+});
+</script>
+</body>
+</html>`);
+});
+
+app.get("/dashboard/logout", dashboardAuth, (_req, res) => {
+  res.setHeader(
+    "Set-Cookie",
+    "testegpt_dashboard=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+  );
+  res.redirect("/dashboard");
 });
 
 app.get("/login", async (_req, res) => {
