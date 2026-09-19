@@ -86,6 +86,93 @@ const bool = (value) =>
   value === true ||
   ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 
+
+const isLoopbackHost = (host) =>
+  ["127.0.0.1", "::1", "localhost"].includes(String(host || "").toLowerCase());
+
+const REMOTE_LOGIN_SECURITY_OK =
+  !REMOTE_LOGIN_ENABLED ||
+  isLoopbackHost(HOST) ||
+  Boolean(DASHBOARD_TOKEN);
+
+const safeTokenEqual = (left, right) => {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+const cookieValue = (cookieHeader, name) => {
+  const pairs = String(cookieHeader || "").split(";");
+  for (const pair of pairs) {
+    const index = pair.indexOf("=");
+    if (index < 0) continue;
+    const key = pair.slice(0, index).trim();
+    if (key !== name) continue;
+
+    try {
+      return decodeURIComponent(pair.slice(index + 1).trim());
+    } catch {
+      return pair.slice(index + 1).trim();
+    }
+  }
+  return "";
+};
+
+const dashboardRequestAuthorized = (req) => {
+  if (!DASHBOARD_TOKEN) {
+    return isLoopbackHost(HOST);
+  }
+
+  const token = cookieValue(req?.headers?.cookie, "testegpt_dashboard");
+  return safeTokenEqual(token, DASHBOARD_TOKEN);
+};
+
+const dashboardAuth = (req, res, next) => {
+  if (!DASHBOARD_TOKEN && isLoopbackHost(HOST)) {
+    return next();
+  }
+
+  const queryToken = String(req.query?.token || "");
+  if (DASHBOARD_TOKEN && safeTokenEqual(queryToken, DASHBOARD_TOKEN)) {
+    const secure = req.secure ? "; Secure" : "";
+    res.setHeader(
+      "Set-Cookie",
+      `testegpt_dashboard=${encodeURIComponent(DASHBOARD_TOKEN)}; Path=/; HttpOnly; SameSite=Strict${secure}`
+    );
+    const cleanUrl = req.path || "/dashboard";
+    return res.redirect(cleanUrl);
+  }
+
+  if (dashboardRequestAuthorized(req)) {
+    return next();
+  }
+
+  res.status(401).type("html").send(`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>testeGPT Dashboard Login</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:520px;margin:70px auto;padding:0 20px;background:#111;color:#eee}
+.card{background:#1b1b1b;border:1px solid #333;border-radius:14px;padding:22px}
+input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:12px;border-radius:9px;border:1px solid #444}
+button{cursor:pointer}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>testeGPT Dashboard</h1>
+<p>Informe o token configurado em <code>DASHBOARD_TOKEN</code>.</p>
+<form method="get">
+<input type="password" name="token" autocomplete="current-password" autofocus>
+<button type="submit">Entrar</button>
+</form>
+</div>
+</body>
+</html>`);
+};
+
 const normalizeSessionId = (value) => {
   const raw = String(value || "default").trim() || "default";
   if (!/^[a-zA-Z0-9._-]{1,64}$/.test(raw)) {
