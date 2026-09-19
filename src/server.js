@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import multer from "multer";
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -9,6 +10,182 @@ import { ChatGPTWebSession } from "./browser.js";
 import { RemoteLoginManager } from "./remote-login.js";
 
 const app = express();
+
+const ENV_FILE = path.resolve(process.env.ENV_FILE || ".env");
+
+const ENV_SETTINGS = [
+  { key: "PORT", label: "Porta HTTP", type: "number", default: "4310", group: "Servidor", min: 1, max: 65535 },
+  { key: "HOST", label: "Host / interface", type: "text", default: "127.0.0.1", group: "Servidor" },
+  { key: "JSON_LIMIT", label: "Limite JSON", type: "text", default: "50mb", group: "Servidor" },
+  { key: "LOCAL_API_KEY", label: "Chave local da API", type: "secret", default: "", group: "Segurança" },
+  { key: "CORS_ORIGIN", label: "Origem CORS", type: "text", default: "", group: "Segurança" },
+  { key: "DASHBOARD_TOKEN", label: "Token do dashboard", type: "secret", default: "", group: "Segurança" },
+
+  { key: "CHATGPT_PROFILE_DIR", label: "Diretório do perfil ChatGPT", type: "text", default: ".data/chatgpt-profile", group: "ChatGPT" },
+  { key: "CHATGPT_HEADLESS", label: "ChatGPT headless", type: "boolean", default: "false", group: "ChatGPT" },
+  { key: "REQUEST_TIMEOUT_MS", label: "Timeout da resposta (ms)", type: "number", default: "180000", group: "ChatGPT", min: 1000 },
+  { key: "REMOTE_BROWSER_CONTROL_ENABLED", label: "Controle pelo dashboard", type: "boolean", default: "true", group: "ChatGPT" },
+  { key: "REMOTE_BROWSER_HIDDEN", label: "Ocultar janela do Chromium", type: "boolean", default: "false", group: "ChatGPT" },
+
+  { key: "MAX_UPLOAD_MB", label: "Upload máximo (MB)", type: "number", default: "40", group: "Arquivos", min: 1 },
+  { key: "MAX_REMOTE_FILE_BYTES", label: "Arquivo remoto máximo (bytes)", type: "number", default: "26214400", group: "Arquivos", min: 1 },
+  { key: "REMOTE_FETCH_TIMEOUT_MS", label: "Timeout de URL remota (ms)", type: "number", default: "30000", group: "Arquivos", min: 1000 },
+  { key: "ALLOW_REMOTE_URL_INPUT", label: "Permitir entrada por URL", type: "boolean", default: "true", group: "Arquivos" },
+
+  { key: "HISTORY_MAX_RECENT_MESSAGES", label: "Mensagens recentes", type: "number", default: "60", group: "Histórico", min: 2 },
+  { key: "HISTORY_MAX_RECENT_CHARS", label: "Caracteres recentes", type: "number", default: "80000", group: "Histórico", min: 1000 },
+  { key: "HISTORY_MESSAGE_CLIP_CHARS", label: "Máximo por mensagem compactada", type: "number", default: "1600", group: "Histórico", min: 100 },
+  { key: "HISTORY_SUMMARY_MAX_CHARS", label: "Resumo acumulado máximo", type: "number", default: "50000", group: "Histórico", min: 1000 },
+
+  { key: "REMOTE_LOGIN_ENABLED", label: "Login VNC Linux", type: "boolean", default: "false", group: "Linux VNC" },
+  { key: "REMOTE_LOGIN_DISPLAY", label: "Display X11", type: "text", default: ":99", group: "Linux VNC" },
+  { key: "REMOTE_LOGIN_RFB_PORT", label: "Porta VNC local", type: "number", default: "5900", group: "Linux VNC", min: 1, max: 65535 },
+  { key: "REMOTE_LOGIN_WIDTH", label: "Largura virtual", type: "number", default: "1440", group: "Linux VNC", min: 320 },
+  { key: "REMOTE_LOGIN_HEIGHT", label: "Altura virtual", type: "number", default: "900", group: "Linux VNC", min: 240 },
+  { key: "REMOTE_LOGIN_USE_EXISTING_DISPLAY", label: "Reutilizar display existente", type: "boolean", default: "false", group: "Linux VNC" }
+];
+
+const ENV_SETTING_MAP = new Map(ENV_SETTINGS.map((setting) => [setting.key, setting]));
+
+const htmlEscape = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const parseDotEnvText = (text = "") => {
+  const values = {};
+  const lines = String(text).split(/\r?\n/);
+
+  for (const line of lines) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
+    if (!match) continue;
+
+    let value = match[2] ?? "";
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+       (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      const quote = value[0];
+      value = value.slice(1, -1);
+      if (quote === '"') {
+        value = value
+          .replace(/\\n/g, "\n")
+          .replace(/\\r/g, "\r")
+          .replace(/\\t/g, "\t")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\");
+      }
+    }
+
+    values[match[1]] = value;
+  }
+
+  return { values, lines };
+};
+
+const readDotEnv = async () => {
+  try {
+    const text = await fs.readFile(ENV_FILE, "utf8");
+    return { exists: true, text, ...parseDotEnvText(text) };
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { exists: false, text: "", values: {}, lines: [] };
+    }
+    throw error;
+  }
+};
+
+const encodeEnvValue = (value) => {
+  const text = String(value ?? "").replace(/[\r\n]+/g, "");
+  if (!text) return "";
+  if (/^[A-Za-z0-9_./:@,+-]+$/.test(text)) return text;
+  return JSON.stringify(text);
+};
+
+const writeDotEnvUpdates = async (updates) => {
+  const current = await readDotEnv();
+  const pending = new Map(Object.entries(updates));
+  const output = [];
+
+  for (const line of current.lines) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+    const key = match?.[1];
+
+    if (key && pending.has(key)) {
+      output.push(`${key}=${encodeEnvValue(pending.get(key))}`);
+      pending.delete(key);
+    } else {
+      output.push(line);
+    }
+  }
+
+  if (output.length && output[output.length - 1] !== "") {
+    output.push("");
+  }
+
+  for (const [key, value] of pending) {
+    output.push(`${key}=${encodeEnvValue(value)}`);
+  }
+
+  await fs.writeFile(
+    ENV_FILE,
+    output.join("\n").replace(/\n*$/, "\n"),
+    "utf8"
+  );
+};
+
+const validateEnvUpdates = (updates, existingValues = {}) => {
+  const errors = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    const setting = ENV_SETTING_MAP.get(key);
+    if (!setting) continue;
+
+    if (setting.type === "boolean" && !["true", "false"].includes(String(value))) {
+      errors.push(`${key}: use true ou false`);
+    }
+
+    if (setting.type === "number") {
+      const number = Number(value);
+      if (!Number.isFinite(number)) {
+        errors.push(`${key}: valor numérico inválido`);
+      } else {
+        if (setting.min != null && number < setting.min) {
+          errors.push(`${key}: mínimo ${setting.min}`);
+        }
+        if (setting.max != null && number > setting.max) {
+          errors.push(`${key}: máximo ${setting.max}`);
+        }
+      }
+    }
+  }
+
+  const futureHost = String(
+    updates.HOST ?? existingValues.HOST ?? process.env.HOST ?? "127.0.0.1"
+  ).trim();
+
+  const futureDashboardToken = String(
+    updates.DASHBOARD_TOKEN ??
+    existingValues.DASHBOARD_TOKEN ??
+    process.env.DASHBOARD_TOKEN ??
+    ""
+  ).trim();
+
+  if (
+    !["127.0.0.1", "::1", "localhost"].includes(futureHost.toLowerCase()) &&
+    !futureDashboardToken
+  ) {
+    errors.push(
+      "DASHBOARD_TOKEN é obrigatório quando HOST expõe o dashboard fora do loopback."
+    );
+  }
+
+  return errors;
+};
 
 const PORT = Number(process.env.PORT || 4310);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -71,6 +248,7 @@ if (CORS_ORIGIN) {
 }
 
 app.use(express.json({ limit: JSON_LIMIT }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
 const upload = multer({
   storage: multer.memoryStorage(),
