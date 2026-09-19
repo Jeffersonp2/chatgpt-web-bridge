@@ -74,6 +74,7 @@ Para conectar mensagens e mídias do WhatsApp por meio do n8n, consulte o [guia 
 Documentação: [referência completa dos endpoints](docs/api.md) · [configuração e operação](README.md) · [integração Evolution API v2](docs/n8n-evolution.md) · [integração Meta](docs/n8n-whatsapp.md) · [histórico de versões](CHANGELOG.md).
 
 Com o servidor em execução, um guia de endpoints e integrações fica disponível em **`/dashboard/docs`**, acessível pelo botão **Endpoints e integrações** do dashboard.
+Nessa página, os botões de teste chamam cada endpoint diretamente e mostram o status HTTP e a resposta. Informe `LOCAL_API_KEY` quando configurada; para chat e áudio, escolha um arquivo ou digite uma mensagem. O dashboard não grava a chave; ela permanece no campo até fechar ou recarregar a página.
 
 ---
 

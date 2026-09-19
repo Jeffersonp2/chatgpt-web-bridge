@@ -37,6 +37,8 @@ Nos exemplos, substitua `SUA_CHAVE` quando a chave estiver configurada. O projet
 
 `GET /` devolve `name`, `version`, `api` e `dashboard`. `GET /health` consulta o navegador e devolve `ok`, `chatgpt`, `sessions`, `features` e `remote_login`; pode responder `503` quando a verificação falha. Quando `DASHBOARD_TOKEN` está configurado, `/health` requer o cookie do dashboard. Sem token, somente é acessível se `HOST` for loopback.
 
+O painel `/dashboard/docs` oferece botões para testar as rotas desta tabela e exibe status HTTP e corpo da resposta. Há campos para chave local, sessão, modelo, mensagem e arquivo. Chat e Responses podem ser testados com streaming SSE. O dashboard não grava a chave; ela permanece no campo até fechar ou recarregar a página. Respostas longas são truncadas na tela após 200.000 caracteres. Testes de geração enviam requisições reais ao ChatGPT Web.
+
 ### Modelos e sessões
 
 ```bash
