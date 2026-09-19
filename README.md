@@ -509,6 +509,55 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 
 ---
 
+## ⚙️ Configuração pelo dashboard
+
+O dashboard agora permite editar o arquivo `.env` sem abrir o arquivo manualmente.
+
+Abra:
+
+```text
+http://IP-DO-SERVIDOR:4310/dashboard
+```
+
+e clique em:
+
+```text
+⚙ Configurar .env
+```
+
+A página permite alterar as variáveis suportadas pelo projeto, agrupadas por categoria:
+
+- Servidor
+- Segurança
+- ChatGPT
+- Arquivos
+- Histórico
+- Linux VNC
+
+Os campos sensíveis `DASHBOARD_TOKEN` e `LOCAL_API_KEY` não são exibidos em texto puro. Deixe o campo secreto em branco para manter o valor atual, informe um novo valor para substituí-lo ou marque a opção de limpar.
+
+O editor preserva comentários e variáveis desconhecidas já existentes no arquivo `.env`.
+
+Por segurança, o dashboard impede salvar uma configuração que exponha `HOST` fora do loopback sem um `DASHBOARD_TOKEN`.
+
+Depois de salvar, o arquivo é gravado no disco e o dashboard mostra:
+
+```text
+Configuração gravada em .env. Reinicie o testeGPT para aplicar as mudanças.
+```
+
+A maioria das opções é carregada na inicialização do processo, portanto execute novamente:
+
+```powershell
+npm start
+```
+
+ou reinicie o serviço que estiver executando o testeGPT.
+
+> Variáveis definidas diretamente pelo sistema operacional podem ter prioridade sobre o conteúdo do `.env`. O arquivo `.env` continua listado no `.gitignore` e não deve ser enviado ao GitHub.
+
+---
+
 ## 🖥️ Login remoto pelo dashboard
 
 Em um servidor Linux sem monitor, o próprio dashboard pode mostrar o **Chromium que está rodando no servidor**. Assim o login do ChatGPT/Google é feito visualmente de outro PC, notebook, celular ou tablet, mas os cookies continuam sendo gravados no perfil local do servidor:
@@ -688,6 +737,7 @@ A tela remota usa um WebSocket protegido pelo mesmo cookie do dashboard. O `x11v
 - [x] Seleção de modo/modelo por alias
 - [x] Token local opcional
 - [x] Dashboard local
+- [x] Editor protegido do .env pelo dashboard
 - [x] Login remoto do Chromium pelo dashboard em Linux
 - [x] Controle remoto do Chromium via Playwright em Windows/Linux
 - [x] Chromium oculto/headless com visualização somente pelo dashboard
