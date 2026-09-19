@@ -71,6 +71,8 @@ Você continua usando sua conta do ChatGPT no navegador. O bridge recebe o input
 
 Para conectar mensagens e mídias do WhatsApp por meio do n8n, consulte o [guia da Meta](docs/n8n-whatsapp.md) ou o [guia da Evolution API v2](docs/n8n-evolution.md).
 
+Documentação: [referência completa dos endpoints](docs/api.md) · [configuração e operação](README.md) · [integração Evolution API v2](docs/n8n-evolution.md) · [integração Meta](docs/n8n-whatsapp.md) · [histórico de versões](CHANGELOG.md).
+
 ---
 
 ## 🧰 Requisitos
