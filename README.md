@@ -191,7 +191,7 @@ Isso não usa Chat Temporário.
 
 ### Persistência entre reinicializações
 
-O bridge salva localmente, por `session_id`, a URL real da conversa do ChatGPT (`https://chatgpt.com/c/...`). Com isso, se o Chromium fechar e relançar ou se o próprio projeto for encerrado e iniciado novamente, a sessão tenta voltar para o mesmo chat em vez de criar outro sem necessidade.
+O bridge salva localmente, por `session_id`, a URL real da conversa do ChatGPT (`https://chatgpt.com/c/...`), o histórico textual recente e um resumo acumulado do histórico mais antigo. Com isso, se o Chromium fechar e relançar ou se o próprio projeto for encerrado e iniciado novamente, a sessão tenta voltar para o mesmo chat em vez de criar outro sem necessidade.
 
 Os estados ficam em:
 
@@ -209,13 +209,31 @@ Exemplo:
 
 A pasta `.data/` já é ignorada pelo Git e não deve ser enviada ao repositório.
 
+Cada arquivo de sessão pode guardar:
+
+```json
+{
+  "version": 2,
+  "sessionId": "default",
+  "conversationUrl": "https://chatgpt.com/c/...",
+  "rollovers": 1,
+  "summary": "[USER] contexto antigo resumido...",
+  "history": [
+    { "role": "user", "content": "mensagem recente" },
+    { "role": "assistant", "content": "resposta recente" }
+  ]
+}
+```
+
+Quando o histórico recente passa dos limites configurados, as mensagens mais antigas são compactadas em um resumo acumulado local. O bridge preserva as mensagens recentes completas e usa **resumo acumulado + histórico recente** ao migrar para um novo chat.
+
 Se você quiser forçar manualmente uma conversa nova, envie `new_chat: true` na requisição ou chame:
 
 ```text
 POST http://127.0.0.1:4310/v1/conversation/new
 ```
 
-O rollover automático é feito somente para sinais de **limite daquela conversa**. Limites gerais da conta ou do modelo não são tratados como motivo para abrir chats em loop.
+O rollover automático é feito somente para sinais de **limite daquela conversa**. Quando isso acontece, o bridge mantém o histórico persistido, abre um novo chat normal, envia o resumo acumulado + o histórico recente e passa a salvar a URL do novo chat. Limites gerais da conta ou do modelo não são tratados como motivo para abrir chats em loop.
 
 ---
 
@@ -473,6 +491,10 @@ As variáveis disponíveis estão em `.env.example`.
 | `ALLOW_REMOTE_URL_INPUT` | `true` | Habilita entrada HTTP/HTTPS |
 | `LOCAL_API_KEY` | vazio | Proteção opcional para rotas `/v1` |
 | `CORS_ORIGIN` | vazio | Origem CORS opcional para clientes web |
+| `HISTORY_MAX_RECENT_MESSAGES` | `60` | Quantidade máxima aproximada de mensagens recentes completas |
+| `HISTORY_MAX_RECENT_CHARS` | `80000` | Limite aproximado de caracteres no histórico recente |
+| `HISTORY_MESSAGE_CLIP_CHARS` | `1600` | Máximo por mensagem ao compactar histórico antigo |
+| `HISTORY_SUMMARY_MAX_CHARS` | `50000` | Tamanho máximo do resumo acumulado |
 
 > Recomenda-se manter `HOST=127.0.0.1`. Não exponha diretamente o bridge na internet sem autenticação, TLS e controles adicionais.
 
@@ -487,6 +509,8 @@ As variáveis disponíveis estão em `.env.example`.
 - [x] Chat Completions
 - [x] Responses API
 - [x] Conversa persistente e rollover
+- [x] Histórico textual persistente por sessão
+- [x] Resumo acumulado para continuidade após vários rollovers
 - [x] Entrada de imagens
 - [x] Entrada de áudio
 - [x] Endpoints de transcrição e tradução de áudio
