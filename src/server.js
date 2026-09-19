@@ -855,6 +855,12 @@ const sseChunk = (res, payload) => {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 };
 
+const sseEvent = (res, eventName, payload) => {
+  res.write(
+    `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`
+  );
+};
+
 const startSseHeartbeat = (res, intervalMs = 10000) => {
   const timer = setInterval(() => {
     if (res.writableEnded || res.destroyed) return;
@@ -1844,9 +1850,26 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
       let streamedText = "";
       const stopHeartbeat = startSseHeartbeat(res);
 
-      sseChunk(res, {
+      let sequenceNumber = 0;
+      const responseBase = {
+        id: responseId,
+        object: "response",
+        created_at: unix(),
+        status: "in_progress",
+        model,
+        output: []
+      };
+
+      sseEvent(res, "response.created", {
         type: "response.created",
-        response: { id: responseId, object: "response", status: "in_progress", model }
+        sequence_number: sequenceNumber++,
+        response: responseBase
+      });
+
+      sseEvent(res, "response.in_progress", {
+        type: "response.in_progress",
+        sequence_number: sequenceNumber++,
+        response: responseBase
       });
 
       try {
@@ -1855,9 +1878,12 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
           mode,
           onDelta: (delta, fullText) => {
             streamedText = fullText;
-            sseChunk(res, {
+            sseEvent(res, "response.output_text.delta", {
               type: "response.output_text.delta",
+              sequence_number: sequenceNumber++,
               response_id: responseId,
+              output_index: 0,
+              content_index: 0,
               delta
             });
           }
@@ -1871,37 +1897,75 @@ app.post("/v1/responses", upload.any(), async (req, res) => {
         const outputText = [baseText, fileContext].filter(Boolean).join("\n\n");
 
         if (outputText.startsWith(streamedText) && outputText.length > streamedText.length) {
-          sseChunk(res, {
+          sseEvent(res, "response.output_text.delta", {
             type: "response.output_text.delta",
+            sequence_number: sequenceNumber++,
             response_id: responseId,
+            output_index: 0,
+            content_index: 0,
             delta: outputText.slice(streamedText.length)
           });
         } else if (fileContext) {
-          sseChunk(res, {
+          sseEvent(res, "response.output_text.delta", {
             type: "response.output_text.delta",
+            sequence_number: sequenceNumber++,
             response_id: responseId,
+            output_index: 0,
+            content_index: 0,
             delta: `\n\n${fileContext}`
           });
         }
 
-        sseChunk(res, {
+        const completedResponse = {
+          id: responseId,
+          object: "response",
+          created_at: responseBase.created_at,
+          status: "completed",
+          model,
+          session_id: sessionId,
+          output: [
+            {
+              id: `msg_${crypto.randomUUID().replaceAll("-", "")}`,
+              type: "message",
+              status: "completed",
+              role: "assistant",
+              content: [
+                {
+                  type: "output_text",
+                  text: outputText,
+                  annotations: []
+                }
+              ]
+            }
+          ],
+          output_text: outputText,
+          files,
+          url: files.find((file) => file?.url)?.url || null
+        };
+
+        sseEvent(res, "response.output_text.done", {
+          type: "response.output_text.done",
+          sequence_number: sequenceNumber++,
+          response_id: responseId,
+          output_index: 0,
+          content_index: 0,
+          text: outputText
+        });
+
+        sseEvent(res, "response.completed", {
           type: "response.completed",
-          response: {
-            id: responseId,
-            object: "response",
-            status: "completed",
-            model,
-            session_id: sessionId,
-            output_text: outputText,
-            files,
-            url: files.find((file) => file?.url)?.url || null
-          }
+          sequence_number: sequenceNumber++,
+          response: completedResponse
         });
         stopHeartbeat();
         res.end();
       } catch (error) {
         stopHeartbeat();
-        sseChunk(res, { type: "error", ...errorShape(error).payload });
+        sseEvent(res, "error", {
+          type: "error",
+          sequence_number: sequenceNumber++,
+          ...errorShape(error).payload
+        });
         res.end();
       }
       return;
