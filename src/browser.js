@@ -54,10 +54,29 @@ export class ChatGPTWebSession {
       if (this.stopping) return;
 
       if (wasKeeperPage) {
-        console.warn("[bridge] Keeper tab closed. Recreating safety tab...");
-        this.ensureKeeperPage().catch((error) => {
-          console.warn("[bridge] Could not recreate keeper tab:", error.message);
-        });
+        console.warn("[bridge] Keeper tab closed.");
+
+        setTimeout(async () => {
+          if (
+            this.stopping ||
+            this.keeperPage ||
+            !this.context ||
+            this.context !== page.context()
+          ) {
+            return;
+          }
+
+          try {
+            const livePages = this.context.pages().filter((candidate) => !candidate.isClosed());
+            if (!livePages.length && !this.page) {
+              return;
+            }
+
+            await this.ensureKeeperPage();
+            console.log("[bridge] Keeper tab recreated.");
+          } catch {}
+        }, 750);
+
         return;
       }
 
@@ -185,6 +204,7 @@ export class ChatGPTWebSession {
         try {
           const context = await chromium.launchPersistentContext(this.profileDir, {
             headless: this.headless,
+            acceptDownloads: true,
             viewport: { width: 1440, height: 980 },
             args: ["--disable-blink-features=AutomationControlled"]
           });
@@ -1080,7 +1100,9 @@ export class ChatGPTWebSession {
           }
         } catch {}
 
-        await download.cancel().catch(() => {});
+        // Do not cancel the Playwright download here. Cancelling a browser-managed
+        // attachment after reading download.url() can race with Chromium's download
+        // lifecycle on Windows. Playwright cleans temporary downloads with the context.
       }
 
       const afterFiles = networkCapture.files();
