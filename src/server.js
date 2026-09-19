@@ -22,6 +22,8 @@ const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
 const DASHBOARD_TOKEN = String(process.env.DASHBOARD_TOKEN || "").trim();
 const REMOTE_LOGIN_ENABLED =
   String(process.env.REMOTE_LOGIN_ENABLED || "false").toLowerCase() === "true";
+const REMOTE_BROWSER_CONTROL_ENABLED =
+  String(process.env.REMOTE_BROWSER_CONTROL_ENABLED || "true").toLowerCase() !== "false";
 const REMOTE_LOGIN_DISPLAY = String(process.env.REMOTE_LOGIN_DISPLAY || ":99");
 const REMOTE_LOGIN_RFB_PORT = Number(process.env.REMOTE_LOGIN_RFB_PORT || 5900);
 const REMOTE_LOGIN_WIDTH = Number(process.env.REMOTE_LOGIN_WIDTH || 1440);
@@ -679,7 +681,8 @@ app.get("/health", async (_req, res) => {
         parallel_tabs: true,
         model_modes: ["instant", "thinking", "pro"],
         local_api_key_enabled: Boolean(LOCAL_API_KEY),
-        remote_dashboard_login: REMOTE_LOGIN_ENABLED
+        remote_dashboard_login: REMOTE_LOGIN_ENABLED,
+        remote_browser_control: REMOTE_BROWSER_CONTROL_ENABLED
       },
       remote_login: {
         ...remoteLogin.status(),
@@ -717,8 +720,9 @@ a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#ee
 <div class="card">
   <h2>Login remoto</h2>
   <p id="remote-summary">carregando...</p>
-  <a class="button" href="/dashboard/login">Abrir Chromium do servidor</a>
-  <p class="muted">O login acontece dentro do Chromium que roda no servidor. O dashboard não recebe sua senha do Google/ChatGPT.</p>
+  <a class="button" href="/dashboard/browser">Controle pelo Playwright (Windows/Linux)</a>
+  <a class="button" href="/dashboard/login">Tela VNC (Linux)</a>
+  <p class="muted">No Windows use o controle pelo Playwright. No Linux você pode usar o mesmo controle ou a tela VNC.</p>
 </div>
 <div class="card"><h2>Status</h2><pre id="status">carregando...</pre></div>
 <script>
@@ -754,6 +758,274 @@ refresh(); setInterval(refresh,3000);
 </script>
 </body>
 </html>`);
+});
+
+app.get("/dashboard/browser", dashboardAuth, async (_req, res) => {
+  if (!REMOTE_BROWSER_CONTROL_ENABLED) {
+    return res.status(503).type("html").send(
+      "<h1>Controle remoto desativado</h1><p>Configure <code>REMOTE_BROWSER_CONTROL_ENABLED=true</code>.</p>"
+    );
+  }
+
+  try {
+    await chatgpt.openLoginIfNeeded();
+  } catch {}
+
+  res.type("html").send(`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>testeGPT - Controle do Chromium</title>
+<style>
+html,body{margin:0;min-height:100%;background:#111;color:#eee;font-family:system-ui,sans-serif}
+#bar{position:sticky;top:0;z-index:20;background:#1b1b1b;border-bottom:1px solid #333;padding:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button,a,input{font:inherit}
+button,a.btn{padding:8px 11px;border-radius:8px;border:1px solid #444;background:#292929;color:#eee;text-decoration:none;cursor:pointer}
+button.active{background:#eee;color:#111}
+#tabs{display:flex;gap:6px;flex-wrap:wrap;max-width:100%}
+#viewer{display:flex;justify-content:center;align-items:flex-start;background:#000;min-height:60vh;overflow:auto}
+#frame{display:block;max-width:100%;height:auto;cursor:crosshair;user-select:none;-webkit-user-drag:none}
+#typing{display:flex;gap:8px;padding:8px;background:#181818;border-top:1px solid #333;position:sticky;bottom:0}
+#text{flex:1;min-width:80px;padding:10px;border-radius:8px;border:1px solid #444;background:#111;color:#eee}
+#status{margin-left:auto;color:#aaa;font-size:13px}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="btn" href="/dashboard">← Dashboard</a>
+  <button id="back">←</button>
+  <button id="forward">→</button>
+  <button id="reload">↻</button>
+  <div id="tabs"></div>
+  <span id="status">carregando...</span>
+</div>
+<div id="viewer" tabindex="0">
+  <img id="frame" alt="Chromium remoto">
+</div>
+<div id="typing">
+  <input id="text" type="text" autocomplete="off" placeholder="Digite texto para o campo selecionado no Chromium">
+  <button id="sendText">Digitar</button>
+  <button id="enter">Enter</button>
+  <button id="tabKey">Tab</button>
+  <button id="backspace">⌫</button>
+</div>
+<script>
+const frame = document.getElementById("frame");
+const viewer = document.getElementById("viewer");
+const tabs = document.getElementById("tabs");
+const status = document.getElementById("status");
+const text = document.getElementById("text");
+let pageIndex = 0;
+let lastPageCount = 0;
+let stopped = false;
+let frameBusy = false;
+
+async function action(payload) {
+  payload.page = pageIndex;
+  const response = await fetch("/dashboard/browser/action", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || ("HTTP " + response.status));
+  }
+}
+
+async function refreshState() {
+  try {
+    const response = await fetch("/dashboard/browser/state", {cache:"no-store"});
+    const state = await response.json();
+    const pages = state.pages || [];
+
+    if (pages.length > lastPageCount && lastPageCount > 0) {
+      pageIndex = pages.length - 1;
+    }
+    lastPageCount = pages.length;
+
+    if (pageIndex >= pages.length) pageIndex = Math.max(0, pages.length - 1);
+
+    tabs.innerHTML = "";
+    pages.forEach((page) => {
+      const button = document.createElement("button");
+      button.textContent = (page.title || page.url || ("Aba " + (page.index + 1))).slice(0, 32);
+      button.title = page.url || "";
+      button.className = page.index === pageIndex ? "active" : "";
+      button.onclick = () => {
+        pageIndex = page.index;
+        loadFrame(true);
+        refreshState();
+      };
+      tabs.appendChild(button);
+    });
+
+    const selected = pages[pageIndex];
+    status.textContent = selected ? selected.url : "sem página";
+  } catch (error) {
+    status.textContent = String(error);
+  }
+}
+
+function loadFrame(force = false) {
+  if ((frameBusy && !force) || stopped) return;
+  frameBusy = true;
+  const separator = "/dashboard/browser/frame?page=" + encodeURIComponent(pageIndex) + "&t=" + Date.now();
+  frame.src = separator;
+}
+
+frame.onload = () => {
+  frameBusy = false;
+  setTimeout(() => loadFrame(), 350);
+};
+
+frame.onerror = () => {
+  frameBusy = false;
+  setTimeout(() => loadFrame(), 1000);
+};
+
+frame.addEventListener("click", async (event) => {
+  if (!frame.naturalWidth || !frame.naturalHeight) return;
+
+  const rect = frame.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * frame.naturalWidth / rect.width;
+  const y = (event.clientY - rect.top) * frame.naturalHeight / rect.height;
+
+  try {
+    await action({type:"click", x, y});
+    viewer.focus();
+    setTimeout(() => loadFrame(true), 100);
+  } catch (error) {
+    status.textContent = String(error);
+  }
+});
+
+frame.addEventListener("dblclick", async (event) => {
+  if (!frame.naturalWidth || !frame.naturalHeight) return;
+  const rect = frame.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * frame.naturalWidth / rect.width;
+  const y = (event.clientY - rect.top) * frame.naturalHeight / rect.height;
+  await action({type:"dblclick", x, y}).catch((e) => status.textContent = String(e));
+});
+
+viewer.addEventListener("wheel", async (event) => {
+  event.preventDefault();
+  await action({type:"scroll", deltaX:event.deltaX, deltaY:event.deltaY})
+    .catch((e) => status.textContent = String(e));
+}, {passive:false});
+
+viewer.addEventListener("keydown", async (event) => {
+  if (event.target === text) return;
+
+  event.preventDefault();
+
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push("Control");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.metaKey) modifiers.push("Meta");
+
+  const special = [
+    "Enter","Tab","Backspace","Delete","Escape",
+    "ArrowUp","ArrowDown","ArrowLeft","ArrowRight",
+    "Home","End","PageUp","PageDown"
+  ];
+
+  try {
+    if (event.key.length === 1 && modifiers.length === 0) {
+      await action({type:"type", text:event.key});
+    } else {
+      const key = [...modifiers, event.key].join("+");
+      if (special.includes(event.key) || modifiers.length) {
+        await action({type:"key", key});
+      }
+    }
+  } catch (error) {
+    status.textContent = String(error);
+  }
+});
+
+viewer.addEventListener("paste", async (event) => {
+  event.preventDefault();
+  const value = event.clipboardData?.getData("text") || "";
+  if (value) await action({type:"type", text:value}).catch((e) => status.textContent = String(e));
+});
+
+document.getElementById("sendText").onclick = async () => {
+  const value = text.value;
+  if (!value) return;
+  try {
+    await action({type:"type", text:value});
+    text.value = "";
+    viewer.focus();
+  } catch (error) {
+    status.textContent = String(error);
+  }
+};
+
+text.addEventListener("keydown", async (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    document.getElementById("sendText").click();
+  }
+});
+
+document.getElementById("enter").onclick = () => action({type:"key",key:"Enter"});
+document.getElementById("tabKey").onclick = () => action({type:"key",key:"Tab"});
+document.getElementById("backspace").onclick = () => action({type:"key",key:"Backspace"});
+document.getElementById("back").onclick = () => action({type:"back"});
+document.getElementById("forward").onclick = () => action({type:"forward"});
+document.getElementById("reload").onclick = () => action({type:"reload"});
+
+setInterval(refreshState, 900);
+refreshState();
+loadFrame();
+</script>
+</body>
+</html>`);
+});
+
+app.get("/dashboard/browser/state", dashboardAuth, async (_req, res) => {
+  if (!REMOTE_BROWSER_CONTROL_ENABLED) {
+    return res.status(503).json({ error: "remote browser control disabled" });
+  }
+
+  try {
+    res.json(await chatgpt.remoteBrowserState());
+  } catch (error) {
+    res.status(503).json({ error: error.message });
+  }
+});
+
+app.get("/dashboard/browser/frame", dashboardAuth, async (req, res) => {
+  if (!REMOTE_BROWSER_CONTROL_ENABLED) {
+    return res.sendStatus(503);
+  }
+
+  try {
+    const page = Number.isFinite(Number(req.query.page))
+      ? Number(req.query.page)
+      : null;
+    const png = await chatgpt.remoteBrowserScreenshot(page);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.send(png);
+  } catch (error) {
+    res.status(503).type("text").send(error.message);
+  }
+});
+
+app.post("/dashboard/browser/action", dashboardAuth, async (req, res) => {
+  if (!REMOTE_BROWSER_CONTROL_ENABLED) {
+    return res.status(503).json({ error: "remote browser control disabled" });
+  }
+
+  try {
+    res.json(await chatgpt.remoteBrowserAction(req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.get("/dashboard/remote-status", dashboardAuth, (_req, res) => {
