@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "install:browser": "playwright install chromium",
-    "check": "node --check src/server.js && node --check src/browser.js && node --check src/remote-login.js && node --check src/remote-attachment.js && node --check scripts/build-n8n-workflow.mjs && node --test",
+    "check": "node --check src/server.js && node --check src/browser.js && node --check src/remote-login.js && node --check src/remote-attachment.js && node --check scripts/build-n8n-workflow.mjs && node --check scripts/build-n8n-evolution-workflow.mjs && node --test",
     "install:remote-login": "bash scripts/install-remote-login.sh"
   },
   "engines": {

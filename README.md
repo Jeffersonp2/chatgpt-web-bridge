@@ -69,7 +69,7 @@ Você continua usando sua conta do ChatGPT no navegador. O bridge recebe o input
 - ✅ Token local opcional para proteger `/v1`
 - ✅ Dashboard local de status
 
-Para conectar mensagens e mídias do WhatsApp por meio do n8n, consulte o [guia de integração](docs/n8n-whatsapp.md).
+Para conectar mensagens e mídias do WhatsApp por meio do n8n, consulte o [guia da Meta](docs/n8n-whatsapp.md) ou o [guia da Evolution API v2](docs/n8n-evolution.md).
 
 ---
 

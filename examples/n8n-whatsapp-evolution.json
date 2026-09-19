@@ -1,0 +1,362 @@
+{
+  "name": "testeGPT Evolution API v2 (texto e mídia)",
+  "nodes": [
+    {
+      "id": "evolution-webhook",
+      "name": "Evolution Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "teste-gpt-evolution-TROQUE-POR-SEGREDO-ALEATORIO",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "normalize-evolution",
+      "name": "Normalize Evolution",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const event = $input.first().json.body || $input.first().json;\nif (!['messages.upsert', 'MESSAGES_UPSERT'].includes(event.event)) return [];\nconst data = Array.isArray(event.data) ? event.data[0] : event.data;\nconst key = data?.key;\nif (!key?.id || key.fromMe || typeof key.remoteJid !== 'string') return [];\nconst sender = key.remoteJid;\nif (!/^\\d+@s\\.whatsapp\\.net$/.test(sender)) return [];\nconst raw = data.message || {};\nconst message = raw.ephemeralMessage?.message || raw.viewOnceMessage?.message || raw;\nconst mediaType = ['audio', 'image', 'document', 'video'].find(type => message[type + 'Message']) || '';\nconst media = mediaType ? message[mediaType + 'Message'] : null;\nconst base64 = typeof media?.base64 === 'string' ? media.base64\n  : typeof message.base64 === 'string' ? message.base64\n  : typeof data.base64 === 'string' ? data.base64 : '';\nconst text = message.conversation || message.extendedTextMessage?.text || media?.caption || '';\nif (!mediaType && !text) return [];\nconst prompt = String(text || (mediaType === 'audio'\n  ? 'Ouça o áudio e responda ao que foi falado.'\n  : 'Analise o arquivo anexado e responda ao conteúdo.'));\nreturn [{json:{sender:sender.split('@')[0],messageId:key.id,mediaType,base64,\n  mimeType:media?.mimetype || 'application/octet-stream',\n  fileName:media?.fileName || (mediaType || 'arquivo') + '.bin',prompt,\n  sessionId:('wa_' + sender.split('@')[0]).slice(0,64)}}];"
+      }
+    },
+    {
+      "id": "has-media",
+      "name": "Has Media",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "media",
+              "leftValue": "={{ $json.mediaType }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "media-binary",
+      "name": "Media Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first().json;\nconst raw = String(item.base64 || '');\nconst base64 = raw.includes(',') ? raw.slice(raw.indexOf(',') + 1) : raw;\nif (!base64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length % 4 === 1)\n  throw new Error('Mídia sem base64 no webhook. Ative webhookBase64 na Evolution API.');\nreturn [{json:item,binary:{data:{data:base64,mimeType:item.mimeType,fileName:item.fileName}}}];"
+      }
+    },
+    {
+      "id": "bridge-media",
+      "name": "Bridge Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_SERVIDOR:4310/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "chatgpt-web"
+            },
+            {
+              "name": "session_id",
+              "value": "={{ $json.sessionId }}"
+            },
+            {
+              "name": "messages",
+              "value": "={{ JSON.stringify([{role:'user',content:$json.prompt}]) }}"
+            },
+            {
+              "name": "include_base64",
+              "value": "true"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 660000
+        }
+      }
+    },
+    {
+      "id": "bridge-text",
+      "name": "Bridge Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_SERVIDOR:4310/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'chatgpt-web',session_id:$json.sessionId,messages:[{role:'user',content:$json.prompt}],include_base64:true}) }}",
+        "options": {
+          "timeout": 660000
+        }
+      }
+    },
+    {
+      "id": "prepare-reply",
+      "name": "Prepare Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const result = $input.first().json;\nconst files = Array.isArray(result.files) ? result.files : [];\nlet text = String(result.output_text ?? result.choices?.[0]?.message?.content ?? '').trim();\nif (files.some(file => !file.b64_json))\n  text += (text ? '\\n\\n' : '') + 'Um arquivo foi gerado, mas não consegui baixá-lo para enviar pelo WhatsApp.';\nif (!text) text = files.length ? 'Segue o arquivo gerado.' : 'Não consegui gerar uma resposta.';\nreturn [{json:{text,files}}];"
+      }
+    },
+    {
+      "id": "text-parts",
+      "name": "Text Parts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const text = $input.first().json.text;\nconst sender = $('Normalize Evolution').first().json.sender;\nreturn (text.match(/[\\s\\S]{1,3500}/g) || []).map(part => ({json:{text:part,sender}}));"
+      }
+    },
+    {
+      "id": "send-text",
+      "name": "Send Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_EVOLUTION_API/message/sendText/SUA_INSTANCIA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({number:$json.sender,text:$json.text}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "generated-files",
+      "name": "Generated Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const files = $input.first().json.files || [];\nconst sender = $('Normalize Evolution').first().json.sender;\nreturn files.filter(file => typeof file.b64_json === 'string' && file.b64_json.length)\n  .map(file => { const mimeType = String(file.mime_type || 'application/octet-stream').split(';')[0];\n    const mediatype = mimeType.startsWith('image/') ? 'image'\n      : mimeType.startsWith('video/') ? 'video' : 'document';\n    return {json:{sender,mediatype,mimeType,fileName:file.name || 'arquivo.bin',\n      media:file.b64_json}};\n  });"
+      }
+    },
+    {
+      "id": "send-generated-file",
+      "name": "Send Generated File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_EVOLUTION_API/message/sendMedia/SUA_INSTANCIA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({number:$json.sender,mediatype:$json.mediatype,mimetype:$json.mimeType,media:$json.media,fileName:$json.fileName,filename:$json.fileName}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Evolution Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Evolution": {
+      "main": [
+        [
+          {
+            "node": "Has Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Media": {
+      "main": [
+        [
+          {
+            "node": "Media Binary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bridge Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Media Binary": {
+      "main": [
+        [
+          {
+            "node": "Bridge Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bridge Media": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bridge Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reply": {
+      "main": [
+        [
+          {
+            "node": "Text Parts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generated Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Parts": {
+      "main": [
+        [
+          {
+            "node": "Send Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generated Files": {
+      "main": [
+        [
+          {
+            "node": "Send Generated File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
