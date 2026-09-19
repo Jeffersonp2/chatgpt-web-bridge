@@ -2,7 +2,9 @@ import express from "express";
 import multer from "multer";
 import crypto from "node:crypto";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { ChatGPTWebSession } from "./browser.js";
+import { RemoteLoginManager } from "./remote-login.js";
 
 const app = express();
 
@@ -15,6 +17,31 @@ const MAX_REMOTE_FILE_BYTES = Number(process.env.MAX_REMOTE_FILE_BYTES || 25 * 1
 const REMOTE_FETCH_TIMEOUT_MS = Number(process.env.REMOTE_FETCH_TIMEOUT_MS || 30000);
 const ALLOW_REMOTE_URL_INPUT = String(process.env.ALLOW_REMOTE_URL_INPUT || "true").toLowerCase() !== "false";
 const CORS_ORIGIN = String(process.env.CORS_ORIGIN || "").trim();
+const DASHBOARD_TOKEN = String(process.env.DASHBOARD_TOKEN || "").trim();
+const REMOTE_LOGIN_ENABLED =
+  String(process.env.REMOTE_LOGIN_ENABLED || "false").toLowerCase() === "true";
+const REMOTE_LOGIN_DISPLAY = String(process.env.REMOTE_LOGIN_DISPLAY || ":99");
+const REMOTE_LOGIN_RFB_PORT = Number(process.env.REMOTE_LOGIN_RFB_PORT || 5900);
+const REMOTE_LOGIN_WIDTH = Number(process.env.REMOTE_LOGIN_WIDTH || 1440);
+const REMOTE_LOGIN_HEIGHT = Number(process.env.REMOTE_LOGIN_HEIGHT || 900);
+const REMOTE_LOGIN_USE_EXISTING_DISPLAY =
+  String(process.env.REMOTE_LOGIN_USE_EXISTING_DISPLAY || "false").toLowerCase() === "true";
+
+const require = createRequire(import.meta.url);
+let NOVNC_DIR = null;
+try {
+  NOVNC_DIR = path.dirname(require.resolve("@novnc/novnc/package.json"));
+} catch {}
+
+const remoteLogin = new RemoteLoginManager({
+  enabled: REMOTE_LOGIN_ENABLED,
+  display: REMOTE_LOGIN_DISPLAY,
+  rfbPort: REMOTE_LOGIN_RFB_PORT,
+  width: REMOTE_LOGIN_WIDTH,
+  height: REMOTE_LOGIN_HEIGHT,
+  useExistingDisplay: REMOTE_LOGIN_USE_EXISTING_DISPLAY,
+  wsPath: "/dashboard/vnc"
+});
 
 if (CORS_ORIGIN) {
   app.use((req, res, next) => {
