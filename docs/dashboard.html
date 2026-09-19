@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>testeGPT — Endpoints e integrações</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}html{scroll-behavior:smooth}
+    body{margin:0;background:#101114;color:#edf0f3;font:16px/1.55 system-ui,sans-serif}
+    a{color:#a7caff}a:hover{color:#d4e4ff}header{position:sticky;top:0;z-index:1;background:#17191eef;border-bottom:1px solid #363a42}
+    .bar{max-width:1160px;margin:auto;padding:13px 22px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+    .bar strong{font-size:1.08rem}.bar nav{display:flex;gap:16px;flex-wrap:wrap}
+    main{max-width:1160px;margin:auto;padding:30px 22px 80px}h1{font-size:2rem;margin:0 0 6px}h2{font-size:1.42rem;margin:0 0 12px}h3{font-size:1.08rem;margin:22px 0 8px}
+    .muted{color:#b5bbc4}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+    .card{background:#1b1e24;border:1px solid #363a42;border-radius:14px;padding:20px;margin:18px 0}
+    .grid .card{margin:0}.pill{display:inline-block;border-radius:999px;background:#283f38;color:#9ce3c4;padding:2px 9px;font:600 .78rem system-ui;margin-right:5px}
+    table{border-collapse:collapse;width:100%;font-size:.94rem}th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid #363a42}th{color:#b5bbc4}
+    .scroll{overflow-x:auto}code,pre{font:14px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}code{background:#262a31;padding:2px 5px;border-radius:5px}
+    pre{background:#0b0c0f;border:1px solid #30343b;border-radius:10px;padding:15px;overflow:auto;white-space:pre}
+    pre code{background:none;padding:0}details{border-top:1px solid #363a42;padding:12px 0}summary{cursor:pointer;font-weight:650}
+    .notice{border-left:3px solid #f1c078;background:#2b261d;padding:12px 15px;border-radius:5px}
+    ul,ol{padding-left:22px}li{margin:5px 0}.method{font-weight:700;color:#a5e2c1}
+    @media(max-width:640px){h1{font-size:1.6rem}th,td{padding:8px}.bar{gap:9px}}
+  </style>
+</head>
+<body>
+<header><div class="bar"><strong>testeGPT</strong><nav><a href="/dashboard">← Dashboard</a><a href="#endpoints">Endpoints</a><a href="#exemplos">Exemplos</a><a href="#integracoes">Integrações</a><a href="#limites">Limites</a></nav></div></header>
+<main>
+  <h1>Endpoints e integrações</h1>
+  <p class="muted">Base URL: <code id="base-url">http://127.0.0.1:4310/v1</code>. As chamadas dependem de uma sessão autenticada no ChatGPT Web.</p>
+
+  <section class="grid" aria-label="Comece aqui">
+    <div class="card"><h2>Autenticação</h2><p>Se <code>LOCAL_API_KEY</code> estiver definida, envie <code>X-API-Key: SUA_CHAVE</code> ou <code>Authorization: Bearer SUA_CHAVE</code> em todas as rotas <code>/v1/*</code>. Fora do loopback, a chave é obrigatória.</p><p>O dashboard usa <code>DASHBOARD_TOKEN</code> separado.</p></div>
+    <div class="card"><h2>Sessões e modelos</h2><p>O padrão é <code>session_id=default</code>. Passe <code>session_id</code> no corpo ou <code>X-Session-Id</code> no cabeçalho para separar conversas por contato. Modelos: <code>chatgpt-web</code>, <code>-instant</code>, <code>-thinking</code>, <code>-pro</code>.</p></div>
+  </section>
+
+  <section id="endpoints" class="card">
+    <h2>Referência de endpoints</h2>
+    <div class="scroll"><table><thead><tr><th>Método</th><th>Rota</th><th>Entrada e resultado</th></tr></thead><tbody>
+      <tr><td class="method">GET</td><td><code>/</code></td><td>Nome, versão e URLs do servidor.</td></tr>
+      <tr><td class="method">GET</td><td><code>/health</code></td><td>Estado do navegador, sessões e recursos. Usa autenticação do dashboard.</td></tr>
+      <tr><td class="method">GET</td><td><code>/login</code></td><td>Abre a tela de login do ChatGPT se necessário. Usa autenticação do dashboard.</td></tr>
+      <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>Lista aliases de modelos disponíveis.</td></tr>
+      <tr><td class="method">GET</td><td><code>/v1/models/:model</code></td><td>Consulta um alias; retorna 404 se não existir.</td></tr>
+      <tr><td class="method">GET</td><td><code>/v1/sessions</code></td><td>Lista sessões atualmente abertas em memória.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/sessions</code></td><td>Cria ou abre uma sessão; <code>{"session_id":"cliente-1"}</code>. Retorna 201.</td></tr>
+      <tr><td class="method">DELETE</td><td><code>/v1/sessions/:sessionId</code></td><td>Fecha uma sessão diferente de <code>default</code>.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/conversation/new</code></td><td>Abre conversa normal nova na sessão informada.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td><code>messages[]</code>, anexos opcionais e <code>stream</code>. Retorna <code>choices[]</code>, <code>output_text</code> e <code>files[]</code>.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/responses</code></td><td><code>input</code> como texto, partes ou mensagens. Retorna <code>output[]</code>, <code>output_text</code> e <code>files[]</code>.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/audio/transcriptions</code></td><td><code>multipart/form-data</code> com <code>file</code>; retorna <code>text</code>.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/audio/translations</code></td><td><code>multipart/form-data</code> com <code>file</code>; pede tradução para inglês.</td></tr>
+      <tr><td class="method">POST</td><td><code>/v1/images/generations</code></td><td><code>prompt</code> ou anexo; retorna <code>data[]</code> e <code>files[]</code>.</td></tr>
+    </tbody></table></div>
+    <p>As rotas <code>/v1/*</code> usam a chave da API. As rotas do dashboard usam o cookie do dashboard. <a href="https://github.com/Jeffersonp2/testeGPT/blob/main/docs/api.md" target="_blank" rel="noopener noreferrer">Referência HTTP detalhada</a>.</p>
+    <details><summary>Rotas auxiliares do dashboard</summary><p><code>GET /dashboard</code>, <code>GET/POST /dashboard/settings</code>, <code>GET /dashboard/browser</code>, <code>GET /dashboard/browser/state</code>, <code>GET /dashboard/browser/frame?page=0</code>, <code>POST /dashboard/browser/action</code>, <code>GET /dashboard/remote-status</code>, <code>GET /dashboard/login</code> e <code>GET /dashboard/logout</code>. O controle VNC usa <code>/novnc/*</code> e WebSocket <code>/dashboard/vnc</code> quando habilitado.</p></details>
+  </section>
+
+  <section id="exemplos" class="card">
+    <h2>Exemplos de chamadas</h2>
+    <p>Remova o cabeçalho <code>X-API-Key</code> somente se o bridge estiver em loopback e <code>LOCAL_API_KEY</code> estiver vazia.</p>
+    <h3>Chat</h3>
+    <pre><code>curl http://127.0.0.1:4310/v1/chat/completions \
+  -H 'X-API-Key: SUA_CHAVE' -H 'Content-Type: application/json' \
+  -d '{"model":"chatgpt-web","session_id":"cliente-1","messages":[{"role":"user","content":"Olá!"}]}'</code></pre>
+    <h3>Imagem, áudio ou arquivo recebido</h3>
+    <pre><code>curl http://127.0.0.1:4310/v1/chat/completions \
+  -H 'X-API-Key: SUA_CHAVE' \
+  -F 'model=chatgpt-web' -F 'session_id=cliente-1' \
+  -F 'messages=[{"role":"user","content":"Analise o anexo."}]' \
+  -F 'include_base64=true' -F 'file=@arquivo.pdf;type=application/pdf'</code></pre>
+    <h3>Responses API</h3>
+    <pre><code>curl http://127.0.0.1:4310/v1/responses \
+  -H 'X-API-Key: SUA_CHAVE' -H 'Content-Type: application/json' \
+  -d '{"model":"chatgpt-web","input":"Explique HTTP em uma frase."}'</code></pre>
+    <p><code>stream: true</code> ativa SSE. O cabeçalho <code>X-TesteGPT-Stream-Granularity: ui-delta</code> informa que os deltas vêm da interface. Para arquivos gerados, solicite <code>include_base64: true</code> e use <code>files[].b64_json</code> quando disponível; a URL pode expirar.</p>
+  </section>
+
+  <section id="integracoes">
+    <h2>Integrações com WhatsApp via n8n</h2>
+    <p>O testeGPT fornece a API local; o n8n recebe webhooks, obtém mídias do provedor, chama o bridge e envia a resposta. O n8n precisa alcançar o endereço do bridge. Dentro de um contêiner, <code>127.0.0.1</code> aponta para o próprio contêiner.</p>
+    <div class="grid">
+      <article class="card">
+        <h3>Evolution API v2</h3>
+        <ol>
+          <li>Importe <a href="https://github.com/Jeffersonp2/testeGPT/blob/main/examples/n8n-whatsapp-evolution.json" target="_blank" rel="noopener noreferrer">n8n-whatsapp-evolution.json</a> no n8n.</li>
+          <li>Configure o webhook da instância com <code>MESSAGES_UPSERT</code> e <code>webhookBase64: true</code>, apontando à Production URL do nó <strong>Evolution Webhook</strong>.</li>
+          <li>Nos nós Bridge, defina a URL alcançável e a credencial Header Auth <code>X-API-Key</code>. Nos nós de envio, defina a URL, a instância e a credencial <code>apikey</code> da Evolution.</li>
+          <li>Teste texto, áudio, imagem, PDF e envio de arquivo gerado antes de ativar o fluxo.</li>
+        </ol>
+        <p><a href="https://github.com/Jeffersonp2/testeGPT/blob/main/docs/n8n-evolution.md" target="_blank" rel="noopener noreferrer">Guia completo da Evolution API</a></p>
+      </article>
+      <article class="card">
+        <h3>WhatsApp Business Cloud (Meta)</h3>
+        <ol>
+          <li>Importe <a href="https://github.com/Jeffersonp2/testeGPT/blob/main/examples/n8n-whatsapp-meta.json" target="_blank" rel="noopener noreferrer">n8n-whatsapp-meta.json</a> no n8n.</li>
+          <li>Configure as credenciais dos nós WhatsApp, a credencial Bearer da Meta para download de mídia e <code>X-API-Key</code> para os nós Bridge.</li>
+          <li>Substitua <code>SEU_SERVIDOR</code> e <code>SEU_PHONE_NUMBER_ID</code>, ative o fluxo e teste texto, mídias e arquivo gerado.</li>
+        </ol>
+        <p><a href="https://github.com/Jeffersonp2/testeGPT/blob/main/docs/n8n-whatsapp.md" target="_blank" rel="noopener noreferrer">Guia completo da Meta</a></p>
+      </article>
+    </div>
+    <p class="notice">Antes do uso contínuo, configure deduplicação persistente por ID da mensagem no n8n. Reentregas de webhook podem gerar respostas duplicadas. Mantenha credenciais apenas no n8n e exponha o bridge por HTTPS ou rede privada com <code>LOCAL_API_KEY</code> e <code>DASHBOARD_TOKEN</code> distintos.</p>
+  </section>
+
+  <section id="limites" class="card">
+    <h2>Limites e comportamento</h2>
+    <ul>
+      <li>JSON: <code>JSON_LIMIT=50mb</code>; multipart: até 20 arquivos, <code>MAX_UPLOAD_MB=40</code> por arquivo.</li>
+      <li>URLs de anexos remotos são limitadas por tamanho, tempo e destino. Arquivos privados do WhatsApp devem ser baixados pelo n8n com a credencial do provedor.</li>
+      <li>IDs de sessão aceitam até 64 caracteres: letras, números, ponto, sublinhado e hífen.</li>
+      <li>Erros da API usam <code>{"error":{"message":"...","type":"..."}}</code>. Códigos comuns: 400 entrada inválida, 401 autenticação, 502 falha no ChatGPT Web e 503 configuração indisponível.</li>
+      <li>A interface do ChatGPT pode mudar. O streaming fornece deltas da UI, sem garantia de um evento por token.</li>
+    </ul>
+    <p>Instalação, variáveis de ambiente e operação: <a href="https://github.com/Jeffersonp2/testeGPT/blob/main/README.md" target="_blank" rel="noopener noreferrer">README</a>.</p>
+  </section>
+</main>
+<script>document.getElementById('base-url').textContent = location.origin + '/v1';</script>
+</body>
+</html>

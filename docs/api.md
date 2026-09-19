@@ -1,4 +1,4 @@
-# Referência HTTP — testeGPT v0.2.0
+# Referência HTTP — testeGPT
 
 Base URL padrão: `http://127.0.0.1:4310`. Os endpoints `/v1/*` são compatíveis com parte dos formatos da API da OpenAI, com extensões próprias descritas aqui. O processamento depende de uma sessão autenticada no ChatGPT Web.
 
@@ -20,6 +20,7 @@ Nos exemplos, substitua `SUA_CHAVE` quando a chave estiver configurada. O projet
 | GET | `/` | Identificação e URLs | Nenhuma |
 | GET | `/health` | Estado do navegador, sessões e recursos | Dashboard |
 | GET | `/login` | Abre a tela de login do ChatGPT se necessário | Dashboard |
+| GET | `/dashboard/docs` | Referência de endpoints e integrações no dashboard | Dashboard |
 | GET | `/v1/models` | Lista de aliases | API |
 | GET | `/v1/models/:model` | Alias específico | API |
 | GET | `/v1/sessions` | Sessões abertas em memória | API |
@@ -134,6 +135,7 @@ Essas rotas usam autenticação do dashboard, separada de `/v1`. Com token, abra
 | Método | Rota | Função |
 |---|---|
 | GET | `/dashboard` | Interface de status |
+| GET | `/dashboard/docs` | Endpoints, exemplos e integrações |
 | GET/POST | `/dashboard/settings` | Formulário e gravação do `.env`; requer reinício para aplicar |
 | GET | `/dashboard/browser` | Controle visual pelo Playwright |
 | GET | `/dashboard/browser/state` | Estado e abas do navegador |

@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { ChatGPTWebSession } from "./browser.js";
 import { RemoteLoginManager } from "./remote-login.js";
 import { downloadRemoteAttachment } from "./remote-attachment.js";
@@ -13,6 +14,7 @@ import { downloadRemoteAttachment } from "./remote-attachment.js";
 const app = express();
 
 const ENV_FILE = path.resolve(process.env.ENV_FILE || ".env");
+const DASHBOARD_DOCS_FILE = fileURLToPath(new URL("../docs/dashboard.html", import.meta.url));
 
 const ENV_SETTINGS = [
   { key: "PORT", label: "Porta HTTP", type: "number", default: "4310", group: "Servidor", min: 1, max: 65535 },
@@ -960,6 +962,7 @@ a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#ee
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
   <a class="button" href="/dashboard/settings">⚙ Configurar .env</a>
   <a class="button" href="/dashboard/browser">🖥 Chromium remoto</a>
+  <a class="button" href="/dashboard/docs">📚 Endpoints e integrações</a>
 </div>
 <div class="card"><strong>API:</strong> http://127.0.0.1:${PORT}/v1</div>
 <div class="card">
@@ -1008,6 +1011,11 @@ refresh(); setInterval(refresh,3000);
 </script>
 </body>
 </html>`);
+});
+
+app.get("/dashboard/docs", dashboardAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.sendFile(DASHBOARD_DOCS_FILE);
 });
 
 app.get("/dashboard/settings", dashboardAuth, async (req, res) => {
