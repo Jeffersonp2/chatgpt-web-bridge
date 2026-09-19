@@ -40,6 +40,8 @@ test("dashboard endpoint buttons send requests and show responses", async (t) =>
   await page.locator("#test-api-key").fill("local-test-key");
 
   await page.locator('button[data-test="models"]').click();
+  await page.waitForFunction(() => document.querySelector("#test-status").textContent.includes("HTTP 200"));
+  await page.waitForFunction(() => document.querySelector("#test-cancel").disabled);
   assert.match(await page.locator("#test-status").innerText(), /HTTP 200/);
   assert.match(await page.locator("#test-result").innerText(), /"object": "list"/);
   assert.equal(calls[0].path, "/v1/models");
@@ -47,6 +49,7 @@ test("dashboard endpoint buttons send requests and show responses", async (t) =>
 
   await page.locator('button[data-test="chat"]').click();
   await page.waitForFunction(() => document.querySelector("#test-result").textContent.includes("teste OK"));
+  await page.waitForFunction(() => document.querySelector("#test-cancel").disabled);
   assert.match(await page.locator("#test-result").innerText(), /teste OK/);
   assert.equal(calls[1].path, "/v1/chat/completions");
   assert.equal(calls[1].method, "POST");
@@ -66,6 +69,7 @@ test("dashboard endpoint buttons send requests and show responses", async (t) =>
   await page.locator("#test-stream").check();
   await page.locator('button[data-test="responses"]').click();
   await page.waitForFunction(() => document.querySelector("#test-result").textContent.includes("response.completed"));
+  await page.waitForFunction(() => document.querySelector("#test-cancel").disabled);
   assert.equal(JSON.parse(calls[2].body).stream, true);
 
   await page.locator("#test-file").setInputFiles({
