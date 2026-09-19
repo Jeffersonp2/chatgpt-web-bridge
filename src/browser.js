@@ -712,12 +712,11 @@ export class ChatGPTWebSession {
   }
 
   latestMessageAttachments(messages = []) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const attachments = this.messageAttachments(messages[index]);
-      if (attachments.length) return attachments;
-    }
+    const latestUser = [...messages]
+      .reverse()
+      .find((message) => String(message?.role || "user") === "user");
 
-    return [];
+    return latestUser ? this.messageAttachments(latestUser) : [];
   }
 
   defaultAttachmentPrompt(attachments = []) {
@@ -1833,9 +1832,14 @@ export class ChatGPTWebSession {
       const rawPrompt = shouldSendFullContext
         ? this.buildPrompt(messages)
         : this.buildLatestPrompt(messages);
-      const prompt = rawPrompt.trim()
-        ? rawPrompt
-        : this.defaultAttachmentPrompt(attachments);
+      const latestText = this.buildLatestPrompt(messages).trim();
+      const attachmentInstruction =
+        attachments.length && !latestText
+          ? this.defaultAttachmentPrompt(attachments)
+          : "";
+      const prompt = [rawPrompt.trim(), attachmentInstruction]
+        .filter(Boolean)
+        .join("\n\n");
 
       if (!prompt.trim() && !attachments.length) {
         throw new Error("No text or attachment input was provided.");
