@@ -22,10 +22,11 @@ const ENV_SETTINGS = [
   { key: "DASHBOARD_TOKEN", label: "Token do dashboard", type: "secret", default: "", group: "Segurança" },
 
   { key: "CHATGPT_PROFILE_DIR", label: "Diretório do perfil ChatGPT", type: "text", default: ".data/chatgpt-profile", group: "ChatGPT" },
-  { key: "CHATGPT_HEADLESS", label: "ChatGPT headless", type: "boolean", default: "false", group: "ChatGPT" },
+  { key: "CHATGPT_HEADLESS", label: "Forçar headless real", type: "boolean", default: "false", group: "ChatGPT" },
+  { key: "CHATGPT_BROWSER_CHANNEL", label: "Canal do navegador (chrome/chromium)", type: "text", default: "", group: "ChatGPT" },
   { key: "REQUEST_TIMEOUT_MS", label: "Timeout da resposta (ms)", type: "number", default: "600000", group: "ChatGPT", min: 1000 },
   { key: "REMOTE_BROWSER_CONTROL_ENABLED", label: "Controle pelo dashboard", type: "boolean", default: "true", group: "ChatGPT" },
-  { key: "REMOTE_BROWSER_HIDDEN", label: "Ocultar janela do Chromium", type: "boolean", default: "false", group: "ChatGPT" },
+  { key: "REMOTE_BROWSER_HIDDEN", label: "Ocultar janela do navegador", type: "boolean", default: "false", group: "ChatGPT" },
 
   { key: "MAX_UPLOAD_MB", label: "Upload máximo (MB)", type: "number", default: "40", group: "Arquivos", min: 1 },
   { key: "MAX_REMOTE_FILE_BYTES", label: "Arquivo remoto máximo (bytes)", type: "number", default: "26214400", group: "Arquivos", min: 1 },
@@ -277,15 +278,25 @@ const upload = multer({
 
 const CHATGPT_HEADLESS =
   String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true";
+const CHATGPT_BROWSER_CHANNEL =
+  String(process.env.CHATGPT_BROWSER_CHANNEL || "").trim() ||
+  (process.platform === "win32" ? "chrome" : "");
+const WINDOWS_HIDDEN_HEADFUL =
+  process.platform === "win32" &&
+  REMOTE_BROWSER_HIDDEN &&
+  !CHATGPT_HEADLESS &&
+  !REMOTE_LOGIN_ACTIVE;
 
 const EFFECTIVE_CHATGPT_HEADLESS =
   REMOTE_LOGIN_ACTIVE
     ? false
-    : (REMOTE_BROWSER_HIDDEN || CHATGPT_HEADLESS);
+    : (WINDOWS_HIDDEN_HEADFUL ? false : (REMOTE_BROWSER_HIDDEN || CHATGPT_HEADLESS));
 
 const chatgpt = new ChatGPTWebSession({
   profileDir: process.env.CHATGPT_PROFILE_DIR || ".data/chatgpt-profile",
   headless: EFFECTIVE_CHATGPT_HEADLESS,
+  hiddenWindow: WINDOWS_HIDDEN_HEADFUL,
+  browserChannel: CHATGPT_BROWSER_CHANNEL,
   timeoutMs: process.env.REQUEST_TIMEOUT_MS || 600000,
   historyMaxRecentMessages: process.env.HISTORY_MAX_RECENT_MESSAGES || 60,
   historyMaxRecentChars: process.env.HISTORY_MAX_RECENT_CHARS || 80000,
@@ -907,7 +918,9 @@ app.get("/health", async (_req, res) => {
         remote_dashboard_login_configured: REMOTE_LOGIN_ENABLED,
         remote_browser_control: REMOTE_BROWSER_CONTROL_ENABLED,
         remote_browser_hidden: REMOTE_BROWSER_HIDDEN,
-        browser_headless_effective: EFFECTIVE_CHATGPT_HEADLESS
+        browser_headless_effective: EFFECTIVE_CHATGPT_HEADLESS,
+        browser_hidden_headful: WINDOWS_HIDDEN_HEADFUL,
+        browser_channel: CHATGPT_BROWSER_CHANNEL || "playwright-chromium"
       },
       remote_login: {
         ...remoteLogin.status(),
@@ -2157,7 +2170,7 @@ app.use((error, _req, res, next) => {
 const server = app.listen(PORT, HOST, async () => {
   console.log(`testeGPT listening on http://${HOST}:${PORT}`);
   console.log(
-    `[browser] Chromium mode: ${EFFECTIVE_CHATGPT_HEADLESS ? "hidden/headless" : "visible"}`
+    `[browser] mode: ${EFFECTIVE_CHATGPT_HEADLESS ? "headless" : WINDOWS_HIDDEN_HEADFUL ? "hidden/headful" : "visible"}; channel: ${CHATGPT_BROWSER_CHANNEL || "playwright-chromium"}`
   );
 
   const dashboardUrls = dashboardNetworkUrls();
