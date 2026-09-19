@@ -189,6 +189,26 @@ reenvia o contexto disponível e continua
 
 Isso não usa Chat Temporário.
 
+### Persistência entre reinicializações
+
+O bridge salva localmente, por `session_id`, a URL real da conversa do ChatGPT (`https://chatgpt.com/c/...`). Com isso, se o Chromium fechar e relançar ou se o próprio projeto for encerrado e iniciado novamente, a sessão tenta voltar para o mesmo chat em vez de criar outro sem necessidade.
+
+Os estados ficam em:
+
+```text
+.data/bridge-sessions/
+```
+
+Exemplo:
+
+```text
+.data/bridge-sessions/default.json
+.data/bridge-sessions/cliente-1.json
+.data/bridge-sessions/cliente-2.json
+```
+
+A pasta `.data/` já é ignorada pelo Git e não deve ser enviada ao repositório.
+
 Se você quiser forçar manualmente uma conversa nova, envie `new_chat: true` na requisição ou chame:
 
 ```text
