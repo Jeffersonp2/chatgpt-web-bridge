@@ -840,6 +840,128 @@ export class ChatGPTWebSession {
     ].join("\n");
   }
 
+  async selectMode(mode) {
+    const requested = String(mode || "").trim().toLowerCase();
+    if (!requested || requested === "auto" || requested === "default") {
+      return null;
+    }
+
+    const aliases = {
+      instant: ["instant", "rápido", "rapido"],
+      thinking: ["thinking", "think", "pensando", "raciocínio", "raciocinio"],
+      pro: ["pro"]
+    };
+
+    const targets = aliases[requested] || [requested];
+    const page = this.page;
+
+    if (!page || page.isClosed()) {
+      throw new Error("ChatGPT page is not available for model selection.");
+    }
+
+    const selectorCandidates = [
+      '[data-testid*="model-switcher"]',
+      '[data-testid*="model-selector"]',
+      'button[aria-label*="model" i]',
+      'button[aria-label*="modelo" i]'
+    ];
+
+    let selectorButton = null;
+
+    for (const selector of selectorCandidates) {
+      const candidate = page.locator(selector).first();
+      if (await candidate.isVisible().catch(() => false)) {
+        selectorButton = candidate;
+        break;
+      }
+    }
+
+    if (!selectorButton) {
+      const buttons = page.locator("button");
+      const count = Math.min(await buttons.count(), 80);
+
+      for (let index = 0; index < count; index += 1) {
+        const button = buttons.nth(index);
+        if (!await button.isVisible().catch(() => false)) continue;
+
+        const label = await button.evaluate((el) =>
+          `${el.textContent || ""} ${el.getAttribute("aria-label") || ""}`
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase()
+        ).catch(() => "");
+
+        if (
+          label.includes("chatgpt") ||
+          label.includes("gpt-") ||
+          label.includes("instant") ||
+          label.includes("thinking") ||
+          label.includes("pro")
+        ) {
+          selectorButton = button;
+          break;
+        }
+      }
+    }
+
+    if (!selectorButton) {
+      const error = new Error(`Could not find the ChatGPT model/mode selector for mode "${mode}".`);
+      error.code = "model_unavailable";
+      throw error;
+    }
+
+    await selectorButton.click({ timeout: 5000 });
+    await sleep(500);
+
+    const options = page.locator(
+      '[role="menuitem"], [role="option"], [data-radix-collection-item], [data-testid*="model"], button'
+    );
+    const count = Math.min(await options.count(), 150);
+
+    for (let index = 0; index < count; index += 1) {
+      const option = options.nth(index);
+      if (!await option.isVisible().catch(() => false)) continue;
+
+      const label = await option.evaluate((el) =>
+        `${el.textContent || ""} ${el.getAttribute("aria-label") || ""}`
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase()
+      ).catch(() => "");
+
+      if (!targets.some((target) => label.includes(target))) continue;
+
+      await option.click({ timeout: 5000 });
+      await sleep(500);
+      return requested;
+    }
+
+    await page.keyboard.press("Escape").catch(() => {});
+
+    const error = new Error(
+      `Requested ChatGPT mode "${mode}" is not available in the current account/UI.`
+    );
+    error.code = "model_unavailable";
+    throw error;
+  }
+
+  async isResponseGenerating() {
+    const page = this.page;
+    if (!page || page.isClosed()) return false;
+
+    const stopVisible = await page
+      .locator(
+        'button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Parar"]'
+      )
+      .first()
+      .isVisible()
+      .catch(() => false);
+
+    if (stopVisible) return true;
+
+    return await page.locator('[aria-busy="true"]').first().isVisible().catch(() => false);
+  }
+
   async getConversationLimitMessage() {
     const bodyText = (await this.page.locator("body").innerText().catch(() => "")).toLowerCase();
 
@@ -1094,6 +1216,49 @@ export class ChatGPTWebSession {
       value.includes("/backend-api/files/download/file_") ||
       value.includes("/backend-api/files/file_") ||
       (value.includes("oaiusercontent.com") && /\.(png|jpe?g|gif|webp|mp4|webm|mov|zip|rar|7z|pdf|txt|csv|json|html?|css|m?js|py|bat|xlsx?|docx?|pptx?)(?:\?|$)/i.test(value));
+  }
+
+  async filesWithBase64(files = []) {
+    const context = this.context;
+    if (!context) return files;
+
+    const enriched = [];
+
+    for (const file of files) {
+      if (!file?.url || !/^https?:/i.test(file.url)) {
+        enriched.push(file);
+        continue;
+      }
+
+      try {
+        const response = await context.request.get(file.url, {
+          timeout: 30000,
+          failOnStatusCode: false
+        });
+
+        if (!response.ok()) {
+          enriched.push(file);
+          continue;
+        }
+
+        const body = await response.body();
+        const headers = response.headers();
+        const mimeType =
+          file.mime_type ||
+          String(headers["content-type"] || "").split(";")[0] ||
+          null;
+
+        enriched.push({
+          ...file,
+          mime_type: mimeType,
+          b64_json: body.toString("base64")
+        });
+      } catch {
+        enriched.push(file);
+      }
+    }
+
+    return enriched;
   }
 
   async snapshotMediaUrls() {
@@ -1482,7 +1647,7 @@ export class ChatGPTWebSession {
     };
   }
 
-  async sendPrompt(prompt, attachments = []) {
+  async sendPrompt(prompt, attachments = [], options = {}) {
     const auth = await this.getAuthState();
 
     if (!auth.authenticated) {
@@ -1509,6 +1674,10 @@ export class ChatGPTWebSession {
         this.lastConversationUrl = this.page.url();
       }
 
+      if (options.mode) {
+        await this.selectMode(options.mode);
+      }
+
       if (attachments.length) {
         await this.attachFiles(attachments);
       }
@@ -1523,6 +1692,8 @@ export class ChatGPTWebSession {
       let lastResult = { text: "", files: [] };
       let lastSnapshot = "";
       let stableSince = Date.now();
+      let streamedText = "";
+      let generationObserved = false;
 
       while (Date.now() - startedAt < this.timeoutMs) {
         const conversationLimit = await this.getConversationLimitMessage();
@@ -1548,15 +1719,28 @@ export class ChatGPTWebSession {
             lastResult = result;
             lastSnapshot = snapshot;
             stableSince = Date.now();
+
+            if (
+              typeof options.onDelta === "function" &&
+              result.text &&
+              result.text.startsWith(streamedText) &&
+              result.text.length > streamedText.length
+            ) {
+              const delta = result.text.slice(streamedText.length);
+              streamedText = result.text;
+              await Promise.resolve(options.onDelta(delta, streamedText));
+            }
           }
 
-          const stopVisible = await this.page
-            .locator('button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Parar"]')
-            .first()
-            .isVisible()
-            .catch(() => false);
+          const generating = await this.isResponseGenerating();
+          if (generating) generationObserved = true;
 
-          if ((lastResult.text || lastResult.files.length) && !stopVisible && Date.now() - stableSince > 1800) {
+          if (
+            (lastResult.text || lastResult.files.length) &&
+            !generating &&
+            Date.now() - stableSince > 2200 &&
+            (generationObserved || Date.now() - startedAt > 3000)
+          ) {
             // Give late-rendered image/file cards a brief chance to attach to the completed turn.
             await sleep(900);
 
@@ -1638,7 +1822,10 @@ export class ChatGPTWebSession {
       }
 
       try {
-        const result = await this.sendPrompt(prompt, attachments);
+        const result = await this.sendPrompt(prompt, attachments, {
+          mode: options.mode,
+          onDelta: options.onDelta
+        });
         this.recordMessage("assistant", this.assistantResultToHistoryText(result));
         return result;
       } catch (error) {
@@ -1650,7 +1837,10 @@ export class ChatGPTWebSession {
         await this.newChat();
 
         const rolloverPrompt = this.buildRolloverPrompt(messages);
-        const result = await this.sendPrompt(rolloverPrompt, attachments);
+        const result = await this.sendPrompt(rolloverPrompt, attachments, {
+          mode: options.mode,
+          onDelta: options.onDelta
+        });
         this.recordMessage("assistant", this.assistantResultToHistoryText(result));
         return result;
       }
