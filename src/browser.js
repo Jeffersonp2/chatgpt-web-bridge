@@ -472,6 +472,238 @@ export class ChatGPTWebSession {
     return String(message.content ?? "");
   }
 
+  extensionFromMime(mimeType = "") {
+    const map = {
+      "audio/wav": "wav",
+      "audio/x-wav": "wav",
+      "audio/mpeg": "mp3",
+      "audio/mp3": "mp3",
+      "audio/mp4": "m4a",
+      "audio/x-m4a": "m4a",
+      "audio/ogg": "ogg",
+      "audio/webm": "webm",
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "image/gif": "gif",
+      "application/pdf": "pdf",
+      "text/plain": "txt",
+      "application/json": "json"
+    };
+
+    return map[String(mimeType || "").toLowerCase()] || "bin";
+  }
+
+  decodeAttachmentData(value, mimeHint = null) {
+    if (!value || typeof value !== "string") return null;
+
+    const dataUrl = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(value);
+    let mimeType = mimeHint || null;
+    let encoded = value;
+
+    if (dataUrl) {
+      mimeType = dataUrl[1] || mimeType;
+      encoded = dataUrl[3] || "";
+      if (!dataUrl[2]) {
+        return {
+          mimeType: mimeType || "application/octet-stream",
+          buffer: Buffer.from(decodeURIComponent(encoded), "utf8")
+        };
+      }
+    }
+
+    const normalized = encoded.replace(/\s+/g, "");
+    if (!normalized) return null;
+
+    try {
+      return {
+        mimeType: mimeType || "application/octet-stream",
+        buffer: Buffer.from(normalized, "base64")
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  attachmentFromPart(part, index = 0) {
+    if (!part || typeof part !== "object") return null;
+
+    if (part.type === "input_audio" || part.type === "audio") {
+      const audio = part.input_audio || part.audio || part;
+      const format = String(audio.format || "wav").replace(/^\./, "").toLowerCase();
+      const mimeByFormat = {
+        wav: "audio/wav",
+        mp3: "audio/mpeg",
+        m4a: "audio/mp4",
+        mp4: "audio/mp4",
+        ogg: "audio/ogg",
+        webm: "audio/webm"
+      };
+      const decoded = this.decodeAttachmentData(
+        audio.data || audio.base64 || audio.url,
+        audio.mime_type || audio.mimeType || mimeByFormat[format] || "audio/wav"
+      );
+      if (!decoded) return null;
+
+      return {
+        name: audio.filename || audio.name || `audio-${index + 1}.${format}`,
+        mimeType: decoded.mimeType,
+        buffer: decoded.buffer,
+        kind: "audio"
+      };
+    }
+
+    if (part.type === "image_url" || part.type === "input_image" || part.type === "image") {
+      const image = part.image_url || part.image || part;
+      const value = typeof image === "string"
+        ? image
+        : (image.url || image.data || image.base64 || part.image_url);
+
+      if (typeof value !== "string" || !value.startsWith("data:")) {
+        return null;
+      }
+
+      const decoded = this.decodeAttachmentData(
+        value,
+        image.mime_type || image.mimeType || "image/png"
+      );
+      if (!decoded) return null;
+
+      const extension = this.extensionFromMime(decoded.mimeType);
+      return {
+        name: image.filename || image.name || `image-${index + 1}.${extension}`,
+        mimeType: decoded.mimeType,
+        buffer: decoded.buffer,
+        kind: "image"
+      };
+    }
+
+    if (
+      part.type === "file" ||
+      part.type === "input_file" ||
+      part.type === "attachment"
+    ) {
+      const file = part.file || part.input_file || part.attachment || part;
+      const decoded = this.decodeAttachmentData(
+        file.data || file.base64 || file.file_data || file.url,
+        file.mime_type || file.mimeType || "application/octet-stream"
+      );
+      if (!decoded) return null;
+
+      const extension = this.extensionFromMime(decoded.mimeType);
+      return {
+        name: file.filename || file.name || `file-${index + 1}.${extension}`,
+        mimeType: decoded.mimeType,
+        buffer: decoded.buffer,
+        kind: "file"
+      };
+    }
+
+    return null;
+  }
+
+  messageAttachments(message) {
+    if (!message) return [];
+
+    const candidates = [];
+
+    if (Array.isArray(message.content)) {
+      candidates.push(...message.content);
+    }
+
+    if (Array.isArray(message.attachments)) {
+      candidates.push(...message.attachments.map((attachment) => ({
+        type: "attachment",
+        attachment
+      })));
+    }
+
+    return candidates
+      .map((part, index) => this.attachmentFromPart(part, index))
+      .filter(Boolean);
+  }
+
+  latestMessageAttachments(messages = []) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const attachments = this.messageAttachments(messages[index]);
+      if (attachments.length) return attachments;
+    }
+
+    return [];
+  }
+
+  defaultAttachmentPrompt(attachments = []) {
+    const kinds = new Set(attachments.map((attachment) => attachment.kind));
+
+    if (kinds.has("audio")) {
+      return "Ouça o áudio anexado. Se ele contiver uma instrução ou comando, execute-o; caso contrário, responda normalmente ao conteúdo do áudio.";
+    }
+
+    if (kinds.has("image")) {
+      return "Use a imagem anexada como entrada do usuário e responda ao conteúdo dela.";
+    }
+
+    return "Use o arquivo anexado como entrada do usuário e responda ao conteúdo dele.";
+  }
+
+  async attachFiles(attachments = []) {
+    if (!attachments.length) return;
+
+    const page = this.page;
+    if (!page || page.isClosed()) {
+      throw new Error("ChatGPT page is not available for file upload.");
+    }
+
+    const payloads = attachments.map((attachment) => ({
+      name: attachment.name,
+      mimeType: attachment.mimeType || "application/octet-stream",
+      buffer: attachment.buffer
+    }));
+
+    const tryInputs = async () => {
+      const inputs = page.locator('input[type="file"]');
+      const count = await inputs.count();
+
+      for (let index = count - 1; index >= 0; index -= 1) {
+        try {
+          await inputs.nth(index).setInputFiles(payloads, { timeout: 5000 });
+          return true;
+        } catch {}
+      }
+
+      return false;
+    };
+
+    if (await tryInputs()) {
+      await sleep(1200);
+      return;
+    }
+
+    const attachSelectors = [
+      'button[data-testid="composer-plus-btn"]',
+      'button[aria-label*="Attach"]',
+      'button[aria-label*="attach"]',
+      'button[aria-label*="Anexar"]',
+      'button[aria-label*="Adicionar"]',
+      'button[aria-label*="Upload"]'
+    ];
+
+    for (const selector of attachSelectors) {
+      const button = page.locator(selector).first();
+      if (!await button.isVisible().catch(() => false)) continue;
+
+      await button.click().catch(() => {});
+      await sleep(500);
+
+      if (await tryInputs()) {
+        await sleep(1200);
+        return;
+      }
+    }
+
+    throw new Error("Could not find ChatGPT file upload control for the supplied attachment.");
+  }
+
   buildPrompt(messages = []) {
     return messages.map((message) => {
       const role = String(message.role || "user").toUpperCase();
@@ -482,7 +714,10 @@ export class ChatGPTWebSession {
   buildLatestPrompt(messages = []) {
     const meaningful = [...messages]
       .reverse()
-      .find((message) => this.messageText(message).trim());
+      .find((message) =>
+        this.messageText(message).trim() ||
+        this.messageAttachments(message).length
+      );
 
     if (!meaningful) return "";
     return this.messageText(meaningful);
@@ -1181,7 +1416,7 @@ export class ChatGPTWebSession {
     };
   }
 
-  async sendPrompt(prompt) {
+  async sendPrompt(prompt, attachments = []) {
     const auth = await this.getAuthState();
 
     if (!auth.authenticated) {
@@ -1206,6 +1441,10 @@ export class ChatGPTWebSession {
 
       if (this.isConversationPage()) {
         this.lastConversationUrl = this.page.url();
+      }
+
+      if (attachments.length) {
+        await this.attachFiles(attachments);
       }
 
       await composer.click();
@@ -1316,18 +1555,24 @@ export class ChatGPTWebSession {
       }
 
       const shouldSendFullContext = forceNewChat || !hadConversation;
-      const prompt = shouldSendFullContext
+      const attachments = this.latestMessageAttachments(messages);
+      const rawPrompt = shouldSendFullContext
         ? this.buildPrompt(messages)
         : this.buildLatestPrompt(messages);
+      const prompt = rawPrompt.trim()
+        ? rawPrompt
+        : this.defaultAttachmentPrompt(attachments);
 
-      if (!prompt.trim()) throw new Error("No text input was provided.");
+      if (!prompt.trim() && !attachments.length) {
+        throw new Error("No text or attachment input was provided.");
+      }
 
       if (!shouldSendFullContext) {
         this.recordMessage("user", prompt);
       }
 
       try {
-        const result = await this.sendPrompt(prompt);
+        const result = await this.sendPrompt(prompt, attachments);
         this.recordMessage("assistant", this.assistantResultToHistoryText(result));
         return result;
       } catch (error) {
@@ -1339,7 +1584,7 @@ export class ChatGPTWebSession {
         await this.newChat();
 
         const rolloverPrompt = this.buildRolloverPrompt(messages);
-        const result = await this.sendPrompt(rolloverPrompt);
+        const result = await this.sendPrompt(rolloverPrompt, attachments);
         this.recordMessage("assistant", this.assistantResultToHistoryText(result));
         return result;
       }
