@@ -125,11 +125,12 @@ export class ChatGPTWebSession {
     if (this.bridgeSummary.length > this.historySummaryMaxChars) {
       const headSize = Math.min(5000, Math.floor(this.historySummaryMaxChars * 0.15));
       const tailSize = Math.max(0, this.historySummaryMaxChars - headSize - 80);
+      const tail = tailSize > 0 ? this.bridgeSummary.slice(-tailSize) : "";
       this.bridgeSummary = [
         this.bridgeSummary.slice(0, headSize),
         "[... older accumulated context compacted ...]",
-        this.bridgeSummary.slice(-tailSize)
-      ].join("\n");
+        tail
+      ].filter(Boolean).join("\n");
     }
 
     return true;
@@ -1118,6 +1119,29 @@ export class ChatGPTWebSession {
     return "";
   }
 
+  buildRecoveryPrompt(messages = []) {
+    const persistedRecent = this.bridgeHistory.length
+      ? this.buildPrompt(this.bridgeHistory)
+      : "";
+    const currentRequest = this.buildLatestPrompt(messages).trim();
+    const accumulatedSummary = this.bridgeSummary.trim();
+
+    return [
+      "Continue the same ongoing conversation using the persisted bridge context below.",
+      "The previous ChatGPT page could not be restored, so this is a recovery handoff.",
+      "Do not mention this handoff unless it is directly relevant.",
+      accumulatedSummary
+        ? "\nACCUMULATED OLDER CONTEXT:\n" + accumulatedSummary
+        : "",
+      persistedRecent
+        ? "\nRECENT PERSISTED HISTORY:\n" + persistedRecent
+        : "",
+      currentRequest
+        ? "\nCURRENT USER REQUEST:\n" + currentRequest
+        : ""
+    ].filter(Boolean).join("\n");
+  }
+
   buildRolloverPrompt(messages = []) {
     const historySource = this.bridgeHistory.length ? this.bridgeHistory : messages;
     const recentHistory = this.buildPrompt(historySource);
@@ -2095,19 +2119,30 @@ export class ChatGPTWebSession {
       const forceNewChat = options.newChat === true;
       const autoRollover = options.autoRollover !== false;
       const hadConversation = this.isConversationPage();
+      const hadPersistedContext =
+        this.bridgeHistory.length > 0 ||
+        Boolean(this.bridgeSummary.trim());
+
+      let recoveringPersistedContext = false;
 
       if (forceNewChat) {
         await this.newChat();
         this.seedHistory(messages);
+      } else if (!hadConversation && hadPersistedContext) {
+        recoveringPersistedContext = true;
       } else if (!hadConversation || this.bridgeHistory.length === 0) {
         this.seedHistory(messages);
       }
 
-      const shouldSendFullContext = forceNewChat || !hadConversation;
+      const shouldSendFullContext =
+        forceNewChat ||
+        (!hadConversation && !recoveringPersistedContext);
       const attachments = this.latestMessageAttachments(messages);
-      const rawPrompt = shouldSendFullContext
-        ? this.buildPrompt(messages)
-        : this.buildLatestPrompt(messages);
+      const rawPrompt = recoveringPersistedContext
+        ? this.buildRecoveryPrompt(messages)
+        : shouldSendFullContext
+          ? this.buildPrompt(messages)
+          : this.buildLatestPrompt(messages);
       const latestText = this.buildLatestPrompt(messages).trim();
       const attachmentInstruction =
         attachments.length && !latestText
@@ -2121,8 +2156,9 @@ export class ChatGPTWebSession {
         throw new Error("No text or attachment input was provided.");
       }
 
-      if (!shouldSendFullContext) {
-        this.recordMessage("user", prompt);
+      if (!shouldSendFullContext || recoveringPersistedContext) {
+        const currentUserText = this.buildLatestPrompt(messages).trim();
+        this.recordMessage("user", currentUserText || prompt);
       }
 
       try {
