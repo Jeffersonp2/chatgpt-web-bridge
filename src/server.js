@@ -903,6 +903,7 @@ if (NOVNC_DIR) {
 }
 
 app.get("/dashboard", dashboardAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
   res.type("html").send(`<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -973,6 +974,7 @@ refresh(); setInterval(refresh,3000);
 });
 
 app.get("/dashboard/settings", dashboardAuth, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
   try {
     const envState = await readDotEnv();
     const saved = String(req.query.saved || "") === "1";
