@@ -1428,6 +1428,8 @@ export class ChatGPTWebSession {
     const page = this.page;
     if (!page || page.isClosed()) return false;
 
+    // The stop-generation control is the strongest signal that the current
+    // assistant turn is still running.
     const stopVisible = await page
       .locator(
         'button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="Parar"]'
@@ -1438,7 +1440,17 @@ export class ChatGPTWebSession {
 
     if (stopVisible) return true;
 
-    return await page.locator('[aria-busy="true"]').first().isVisible().catch(() => false);
+    // Do NOT use a page-global [aria-busy="true"] selector here. ChatGPT can
+    // leave unrelated UI regions (sidebar, loaders, background panels) busy,
+    // which previously kept an already-finished API request alive forever.
+    return await page
+      .locator(
+        '[data-message-author-role="assistant"][aria-busy="true"], ' +
+        '[data-message-author-role="assistant"] [aria-busy="true"]'
+      )
+      .last()
+      .isVisible()
+      .catch(() => false);
   }
 
   async getConversationLimitMessage() {
