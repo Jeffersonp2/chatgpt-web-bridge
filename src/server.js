@@ -31,8 +31,15 @@ const REMOTE_LOGIN_USE_EXISTING_DISPLAY =
 const require = createRequire(import.meta.url);
 let NOVNC_DIR = null;
 try {
-  NOVNC_DIR = path.dirname(require.resolve("@novnc/novnc/package.json"));
-} catch {}
+  NOVNC_DIR = path.resolve(
+    path.dirname(require.resolve("@novnc/novnc/core/rfb.js")),
+    ".."
+  );
+} catch {
+  try {
+    NOVNC_DIR = path.dirname(require.resolve("@novnc/novnc/package.json"));
+  } catch {}
+}
 
 const remoteLogin = new RemoteLoginManager({
   enabled: REMOTE_LOGIN_ENABLED,
