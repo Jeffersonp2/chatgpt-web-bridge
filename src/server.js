@@ -919,6 +919,10 @@ a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#ee
 </head>
 <body>
 <h1>testeGPT Local Bridge</h1>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
+  <a class="button" href="/dashboard/settings">⚙ Configurar .env</a>
+  <a class="button" href="/dashboard/browser">🖥 Chromium remoto</a>
+</div>
 <div class="card"><strong>API:</strong> http://127.0.0.1:${PORT}/v1</div>
 <div class="card">
   <h2>Configuração</h2>
@@ -1009,23 +1013,35 @@ app.get("/dashboard/settings", dashboardAuth, async (req, res) => {
         }
 
         if (setting.type === "boolean") {
-          const normalized = String(currentValue).toLowerCase() === "true" ? "true" : "false";
+          const enabled = String(currentValue).toLowerCase() === "true";
           return `
             <div class="field">
               <label for="${htmlEscape(setting.key)}">
                 <strong>${htmlEscape(setting.label)}</strong>
                 <code>${htmlEscape(setting.key)}</code>
               </label>
-              <select id="${htmlEscape(setting.key)}" name="${htmlEscape(setting.key)}">
-                <option value="true" ${normalized === "true" ? "selected" : ""}>true</option>
-                <option value="false" ${normalized === "false" ? "selected" : ""}>false</option>
-              </select>
+              <div class="switch-row">
+                <input type="hidden" name="${htmlEscape(setting.key)}" value="false">
+                <label class="switch" for="${htmlEscape(setting.key)}">
+                  <input
+                    id="${htmlEscape(setting.key)}"
+                    name="${htmlEscape(setting.key)}"
+                    type="checkbox"
+                    value="true"
+                    ${enabled ? "checked" : ""}
+                  >
+                  <span class="slider"></span>
+                </label>
+                <span
+                  class="switch-state"
+                  data-switch-state="${htmlEscape(setting.key)}"
+                >${enabled ? "Ativado" : "Desativado"}</span>
+              </div>
             </div>`;
         }
 
-        const inputType = setting.type === "number" ? "number" : "text";
-        const min = setting.min != null ? ` min="${setting.min}"` : "";
-        const max = setting.max != null ? ` max="${setting.max}"` : "";
+        const numeric = setting.type === "number";
+        const inputMode = numeric ? ' inputmode="numeric"' : "";
 
         return `
           <div class="field">
@@ -1036,9 +1052,9 @@ app.get("/dashboard/settings", dashboardAuth, async (req, res) => {
             <input
               id="${htmlEscape(setting.key)}"
               name="${htmlEscape(setting.key)}"
-              type="${inputType}"
+              type="text"
               value="${htmlEscape(currentValue)}"
-              ${min}${max}
+              ${inputMode}
             >
           </div>`;
       }).join("");
@@ -1061,8 +1077,19 @@ a{color:#eee}.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .field{display:grid;grid-template-columns:minmax(230px,1fr) minmax(260px,1.2fr);gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid #2b2b2b}
 .field:last-child{border-bottom:0}.field label{display:flex;flex-direction:column;gap:5px}
 .field label.inline{grid-column:2;display:flex;flex-direction:row;align-items:center;font-size:14px;color:#bbb}
-input,select,button{box-sizing:border-box;width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#101010;color:#eee;font:inherit}
-.inline input{width:auto}.actions{position:sticky;bottom:0;background:#111e;padding:14px 0;display:flex;gap:10px}
+input,button{box-sizing:border-box;width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#101010;color:#eee;font:inherit}
+.inline input{width:auto}
+.switch-row{display:flex;align-items:center;gap:12px;min-height:42px}
+.switch{position:relative;display:inline-block!important;width:54px;height:30px;flex:none}
+.switch input{opacity:0;width:0;height:0;position:absolute}
+.slider{position:absolute;inset:0;background:#444;border-radius:999px;cursor:pointer;transition:.18s}
+.slider:before{content:"";position:absolute;width:22px;height:22px;left:4px;top:4px;background:#fff;border-radius:50%;transition:.18s}
+.switch input:checked + .slider{background:#2f9e5b}
+.switch input:checked + .slider:before{transform:translateX(24px)}
+.switch input:focus-visible + .slider{outline:2px solid #8ec5ff;outline-offset:2px}
+.switch-state{font-weight:650;color:#aaa}
+.switch input:checked ~ .slider + .switch-state{color:#7cdb9d}
+.actions{position:sticky;bottom:0;background:#111e;padding:14px 0;display:flex;gap:10px}
 .actions button,.actions a{width:auto;padding:11px 18px;border-radius:9px;text-decoration:none}
 .actions button{background:#eee;color:#111;font-weight:700;cursor:pointer}
 .actions a{background:#292929;border:1px solid #444}
@@ -1088,6 +1115,18 @@ ${saved ? '<div class="notice">Configuração gravada em <code>.env</code>. Rein
     <a href="/dashboard">Cancelar</a>
   </div>
 </form>
+<script>
+document.querySelectorAll('.switch input[type="checkbox"]').forEach((input) => {
+  const state = document.querySelector('[data-switch-state="' + input.id + '"]');
+  const refresh = () => {
+    if (!state) return;
+    state.textContent = input.checked ? 'Ativado' : 'Desativado';
+    state.style.color = input.checked ? '#7cdb9d' : '#aaa';
+  };
+  input.addEventListener('change', refresh);
+  refresh();
+});
+</script>
 </body>
 </html>`);
   } catch (error) {
@@ -1117,7 +1156,11 @@ app.post("/dashboard/settings", dashboardAuth, async (req, res) => {
       }
 
       if (Object.prototype.hasOwnProperty.call(req.body, setting.key)) {
-        updates[setting.key] = String(req.body[setting.key] ?? "").trim();
+        const rawValue = req.body[setting.key];
+        const normalizedValue = Array.isArray(rawValue)
+          ? rawValue[rawValue.length - 1]
+          : rawValue;
+        updates[setting.key] = String(normalizedValue ?? "").trim();
       }
     }
 
