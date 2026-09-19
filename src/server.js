@@ -175,6 +175,10 @@ const validateEnvUpdates = (updates, existingValues = {}) => {
     ""
   ).trim();
 
+  if (!futureHost) {
+    errors.push("HOST não pode ficar vazio.");
+  }
+
   if (
     !["127.0.0.1", "::1", "localhost"].includes(futureHost.toLowerCase()) &&
     !futureDashboardToken
@@ -182,6 +186,17 @@ const validateEnvUpdates = (updates, existingValues = {}) => {
     errors.push(
       "DASHBOARD_TOKEN é obrigatório quando HOST expõe o dashboard fora do loopback."
     );
+  }
+
+  const futureProfileDir = String(
+    updates.CHATGPT_PROFILE_DIR ??
+    existingValues.CHATGPT_PROFILE_DIR ??
+    process.env.CHATGPT_PROFILE_DIR ??
+    ".data/chatgpt-profile"
+  ).trim();
+
+  if (!futureProfileDir) {
+    errors.push("CHATGPT_PROFILE_DIR não pode ficar vazio.");
   }
 
   return errors;
@@ -906,6 +921,11 @@ a.button{display:inline-block;padding:11px 16px;border-radius:9px;background:#ee
 <h1>testeGPT Local Bridge</h1>
 <div class="card"><strong>API:</strong> http://127.0.0.1:${PORT}/v1</div>
 <div class="card">
+  <h2>Configuração</h2>
+  <a class="button" href="/dashboard/settings">⚙ Configurar .env</a>
+  <p class="muted">Altere as configurações do servidor pelo dashboard. Mudanças são gravadas no arquivo .env e podem exigir reinício.</p>
+</div>
+<div class="card">
   <h2>Login remoto</h2>
   <p id="remote-summary">carregando...</p>
   <a class="button" href="/dashboard/browser">Controle pelo Playwright (Windows/Linux)</a>
@@ -946,6 +966,181 @@ refresh(); setInterval(refresh,3000);
 </script>
 </body>
 </html>`);
+});
+
+app.get("/dashboard/settings", dashboardAuth, async (req, res) => {
+  try {
+    const envState = await readDotEnv();
+    const saved = String(req.query.saved || "") === "1";
+
+    const groups = new Map();
+    for (const setting of ENV_SETTINGS) {
+      if (!groups.has(setting.group)) groups.set(setting.group, []);
+      groups.get(setting.group).push(setting);
+    }
+
+    const fields = [...groups.entries()].map(([group, settings]) => {
+      const controls = settings.map((setting) => {
+        const fileHasValue = Object.prototype.hasOwnProperty.call(envState.values, setting.key);
+        const currentValue = fileHasValue
+          ? envState.values[setting.key]
+          : String(process.env[setting.key] ?? setting.default ?? "");
+
+        if (setting.type === "secret") {
+          const configured = Boolean(currentValue);
+          return `
+            <div class="field">
+              <label for="secret_${htmlEscape(setting.key)}">
+                <strong>${htmlEscape(setting.label)}</strong>
+                <code>${htmlEscape(setting.key)}</code>
+              </label>
+              <input
+                id="secret_${htmlEscape(setting.key)}"
+                name="secret_${htmlEscape(setting.key)}"
+                type="password"
+                autocomplete="new-password"
+                placeholder="${configured ? "Configurado — deixe em branco para manter" : "Não configurado"}"
+              >
+              <label class="inline">
+                <input type="checkbox" name="clear_${htmlEscape(setting.key)}" value="1">
+                Limpar este valor
+              </label>
+            </div>`;
+        }
+
+        if (setting.type === "boolean") {
+          const normalized = String(currentValue).toLowerCase() === "true" ? "true" : "false";
+          return `
+            <div class="field">
+              <label for="${htmlEscape(setting.key)}">
+                <strong>${htmlEscape(setting.label)}</strong>
+                <code>${htmlEscape(setting.key)}</code>
+              </label>
+              <select id="${htmlEscape(setting.key)}" name="${htmlEscape(setting.key)}">
+                <option value="true" ${normalized === "true" ? "selected" : ""}>true</option>
+                <option value="false" ${normalized === "false" ? "selected" : ""}>false</option>
+              </select>
+            </div>`;
+        }
+
+        const inputType = setting.type === "number" ? "number" : "text";
+        const min = setting.min != null ? ` min="${setting.min}"` : "";
+        const max = setting.max != null ? ` max="${setting.max}"` : "";
+
+        return `
+          <div class="field">
+            <label for="${htmlEscape(setting.key)}">
+              <strong>${htmlEscape(setting.label)}</strong>
+              <code>${htmlEscape(setting.key)}</code>
+            </label>
+            <input
+              id="${htmlEscape(setting.key)}"
+              name="${htmlEscape(setting.key)}"
+              type="${inputType}"
+              value="${htmlEscape(currentValue)}"
+              ${min}${max}
+            >
+          </div>`;
+      }).join("");
+
+      return `<section class="group"><h2>${htmlEscape(group)}</h2>${controls}</section>`;
+    }).join("");
+
+    res.type("html").send(`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>testeGPT - Configurar .env</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:1050px;margin:32px auto;padding:0 20px;background:#111;color:#eee}
+a{color:#eee}.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.notice{padding:14px;border-radius:10px;margin:16px 0;background:#172719;border:1px solid #315e37;color:#9de5a8}
+.warning{padding:14px;border-radius:10px;margin:16px 0;background:#2a2112;border:1px solid #6a5126;color:#f2cd83}
+.group{background:#1b1b1b;border:1px solid #333;border-radius:14px;padding:18px;margin:16px 0}
+.field{display:grid;grid-template-columns:minmax(230px,1fr) minmax(260px,1.2fr);gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid #2b2b2b}
+.field:last-child{border-bottom:0}.field label{display:flex;flex-direction:column;gap:5px}
+.field label.inline{grid-column:2;display:flex;flex-direction:row;align-items:center;font-size:14px;color:#bbb}
+input,select,button{box-sizing:border-box;width:100%;padding:10px;border-radius:8px;border:1px solid #444;background:#101010;color:#eee;font:inherit}
+.inline input{width:auto}.actions{position:sticky;bottom:0;background:#111e;padding:14px 0;display:flex;gap:10px}
+.actions button,.actions a{width:auto;padding:11px 18px;border-radius:9px;text-decoration:none}
+.actions button{background:#eee;color:#111;font-weight:700;cursor:pointer}
+.actions a{background:#292929;border:1px solid #444}
+code{color:#aaa;font-size:12px}
+@media(max-width:700px){.field{grid-template-columns:1fr}.field label.inline{grid-column:1}.actions{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Configurar .env</h1>
+  <a href="/dashboard">← Dashboard</a>
+</div>
+${saved ? '<div class="notice">Configuração gravada em <code>.env</code>. Reinicie o testeGPT para aplicar as mudanças.</div>' : ""}
+<div class="warning">
+  Os valores são gravados em <code>${htmlEscape(ENV_FILE)}</code>.
+  Variáveis já definidas pelo sistema operacional podem ter prioridade sobre o arquivo <code>.env</code>.
+  Campos secretos nunca são exibidos em texto puro.
+</div>
+<form method="post" action="/dashboard/settings">
+  ${fields}
+  <div class="actions">
+    <button type="submit">Salvar .env</button>
+    <a href="/dashboard">Cancelar</a>
+  </div>
+</form>
+</body>
+</html>`);
+  } catch (error) {
+    res.status(500).type("html").send(
+      `<h1>Erro ao carregar .env</h1><pre>${htmlEscape(error.message)}</pre>`
+    );
+  }
+});
+
+app.post("/dashboard/settings", dashboardAuth, async (req, res) => {
+  try {
+    const envState = await readDotEnv();
+    const updates = {};
+
+    for (const setting of ENV_SETTINGS) {
+      if (setting.type === "secret") {
+        const clearRequested = String(req.body[`clear_${setting.key}`] || "") === "1";
+        const newSecret = String(req.body[`secret_${setting.key}`] || "");
+
+        if (clearRequested) {
+          updates[setting.key] = "";
+        } else if (newSecret) {
+          updates[setting.key] = newSecret;
+        }
+
+        continue;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body, setting.key)) {
+        updates[setting.key] = String(req.body[setting.key] ?? "").trim();
+      }
+    }
+
+    const errors = validateEnvUpdates(updates, envState.values);
+    if (errors.length) {
+      return res.status(400).type("html").send(`<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Configuração inválida</title></head>
+<body style="font-family:system-ui;background:#111;color:#eee;max-width:850px;margin:50px auto;padding:20px">
+<h1>Não foi possível salvar</h1>
+<ul>${errors.map((error) => `<li>${htmlEscape(error)}</li>`).join("")}</ul>
+<p><a style="color:#fff" href="/dashboard/settings">← Voltar para configurações</a></p>
+</body>
+</html>`);
+    }
+
+    await writeDotEnvUpdates(updates);
+    res.redirect("/dashboard/settings?saved=1");
+  } catch (error) {
+    res.status(500).type("html").send(
+      `<h1>Erro ao salvar .env</h1><pre>${htmlEscape(error.message)}</pre><p><a href="/dashboard/settings">Voltar</a></p>`
+    );
+  }
 });
 
 app.get("/dashboard/browser", dashboardAuth, async (_req, res) => {
