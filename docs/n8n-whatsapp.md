@@ -2,12 +2,18 @@
 
 O testeGPT recebe texto, áudio, imagens e arquivos, mas não se conecta sozinho ao WhatsApp. O n8n recebe a mensagem, baixa a mídia com a credencial do provedor, chama o bridge e envia a resposta. Este guia usa os nós do WhatsApp Business Cloud da Meta; para outro provedor, troque apenas os nós de entrada, download e envio.
 
+O arquivo [n8n-whatsapp-meta.json](../examples/n8n-whatsapp-meta.json) contém um workflow importável para a API oficial da Meta. Importe-o em **Workflows → Import from File**, configure os itens abaixo e só então ative o fluxo. O arquivo pode ser regenerado com `node scripts/build-n8n-workflow.mjs`.
+
 ## Preparação
 
 1. Inicie o testeGPT e confirme que o login do ChatGPT Web funciona.
 2. Garanta que o n8n alcança a URL do bridge. `127.0.0.1` dentro de um contêiner n8n aponta para o próprio contêiner, não para o computador que executa o testeGPT.
 3. Se usar `HOST=0.0.0.0`, configure **duas chaves diferentes**: `DASHBOARD_TOKEN` e `LOCAL_API_KEY`. Use HTTPS ou uma rede privada entre n8n e o bridge.
 4. Guarde `LOCAL_API_KEY` em uma credencial Header Auth do n8n com o cabeçalho `X-API-Key`. Não coloque a chave no workflow exportado.
+5. No workflow importado, substitua `SEU_SERVIDOR` nos nós **Bridge Text** e **Bridge Media** e `SEU_PHONE_NUMBER_ID` nos nós **Send Text** e **Send Generated File**.
+6. Selecione a credencial WhatsApp Business Cloud nos nós **WhatsApp Trigger**, **Get Media URL**, **Send Text** e **Send Generated File**. Nos nós **Download Media**, use uma credencial Header Auth com `Authorization: Bearer <token da Meta>`. Nos dois nós **Bridge**, use a credencial `X-API-Key` do passo 4.
+
+O workflow trata uma mensagem por execução, separa respostas longas em partes de até 3.500 caracteres e tenta enviar cada arquivo de `files[]` que contenha `b64_json`. Se algum arquivo não puder ser baixado, ele informa isso em texto. O fluxo deve ser ativado apenas depois de configurar as credenciais e testar com o seu número.
 
 ## Fluxo de entrada
 
@@ -54,6 +60,6 @@ Respeite os limites `MAX_UPLOAD_MB`, `JSON_LIMIT` e os limites de mídia do seu 
 2. Envie um áudio curto e confira se a resposta se refere ao que foi falado.
 3. Envie uma imagem e um PDF pequenos.
 4. Peça um arquivo gerado e confirme separadamente `files[]`, `b64_json`, upload e envio no WhatsApp.
-5. Repita um evento de mensagem e confirme que a deduplicação impede resposta dupla.
+5. Antes de uso contínuo, configure deduplicação persistente por ID da mensagem em um Data Table, Redis ou banco de dados no n8n. O workflow de exemplo ainda não inclui esse armazenamento; sem ele, uma nova entrega do webhook pode causar resposta dupla.
 
 Consulte a documentação do n8n para os nós [WhatsApp Trigger](https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.whatsapptrigger/), [WhatsApp Business Cloud](https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.whatsapp/) e [HTTP Request Form-Data](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/).

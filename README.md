@@ -299,6 +299,8 @@ Resposta:
 }
 ```
 
+O campo adicional `output_text` contém apenas o texto da resposta, sem os links descritivos de `files[]`. Ele facilita integrações que enviam os arquivos separadamente, como o workflow n8n.
+
 
 ---
 

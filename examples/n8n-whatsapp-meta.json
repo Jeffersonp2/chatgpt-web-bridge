@@ -1,0 +1,390 @@
+{
+  "name": "testeGPT WhatsApp Cloud (texto e mídia)",
+  "nodes": [
+    {
+      "id": "whatsapp-trigger",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      }
+    },
+    {
+      "id": "normalize",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const event = $input.first().json;\nconst message = event.messages?.[0];\nif (!message?.id || !message.from) return [];\nconst sender = String(message.from);\nconst mediaType = ['audio', 'image', 'document', 'video'].includes(message.type) ? message.type : '';\nconst media = mediaType ? message[mediaType] : null;\nif (message.type !== 'text' && !media?.id) return [];\nconst prompt = String(message.text?.body || media?.caption || (mediaType === 'audio'\n  ? 'Ouça o áudio e responda ao que foi falado.'\n  : 'Analise o arquivo anexado e responda ao conteúdo.'));\nreturn [{ json: {\n  sender, messageId: message.id, mediaId: media?.id || '', mediaType,\n  prompt, sessionId: ('wa_' + sender.replace(/[^0-9]/g, '')).slice(0, 64)\n}}];"
+      }
+    },
+    {
+      "id": "has-media",
+      "name": "Has Media",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "media",
+              "leftValue": "={{ $json.mediaId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "get-media-url",
+      "name": "Get Media URL",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        160
+      ],
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $json.mediaId }}"
+      }
+    },
+    {
+      "id": "download-media",
+      "name": "Download Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        160
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "bridge-media",
+      "name": "Bridge Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_SERVIDOR:4310/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "chatgpt-web"
+            },
+            {
+              "name": "session_id",
+              "value": "={{ $('Normalize').first().json.sessionId }}"
+            },
+            {
+              "name": "messages",
+              "value": "={{ JSON.stringify([{role:'user',content:$('Normalize').first().json.prompt}]) }}"
+            },
+            {
+              "name": "include_base64",
+              "value": "true"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 660000
+        }
+      }
+    },
+    {
+      "id": "bridge-text",
+      "name": "Bridge Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://SEU_SERVIDOR:4310/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'chatgpt-web',session_id:$('Normalize').first().json.sessionId,messages:[{role:'user',content:$('Normalize').first().json.prompt}],include_base64:true}) }}",
+        "options": {
+          "timeout": 660000
+        }
+      }
+    },
+    {
+      "id": "prepare-reply",
+      "name": "Prepare Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const result = $input.first().json;\nconst files = Array.isArray(result.files) ? result.files : [];\nlet text = String(result.output_text ?? result.choices?.[0]?.message?.content ?? '').trim();\nif (files.length && files.some(file => !file.b64_json)) {\n  text += (text ? '\\n\\n' : '') + 'Um arquivo foi gerado, mas não consegui baixá-lo para enviar pelo WhatsApp.';\n}\nif (!text) text = files.length ? 'Segue o arquivo gerado.' : 'Não consegui gerar uma resposta.';\nreturn [{json:{text,files}}];"
+      }
+    },
+    {
+      "id": "text-parts",
+      "name": "Text Parts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const text = $input.first().json.text;\nconst sender = $('Normalize').first().json.sender;\nconst parts = text.match(/[\\s\\S]{1,3500}/g) || [];\nreturn parts.map(part => ({json:{text:part,sender}}));"
+      }
+    },
+    {
+      "id": "send-text",
+      "name": "Send Text",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        200
+      ],
+      "parameters": {
+        "operation": "send",
+        "messageType": "text",
+        "phoneNumberId": "SEU_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $json.sender }}",
+        "textBody": "={{ $json.text }}",
+        "additionalFields": {}
+      }
+    },
+    {
+      "id": "generated-files",
+      "name": "Generated Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const files = $input.first().json.files || [];\nconst sender = $('Normalize').first().json.sender;\nreturn files.filter(file => typeof file.b64_json === 'string' && file.b64_json.length)\n  .map(file => {\n    const mimeType = String(file.mime_type || 'application/octet-stream').split(';')[0];\n    const messageType = mimeType.startsWith('image/') ? 'image'\n      : mimeType.startsWith('audio/') ? 'audio'\n      : mimeType.startsWith('video/') ? 'video' : 'document';\n    return {json:{sender,messageType},binary:{data:{\n      data:file.b64_json,mimeType,fileName:file.name || 'arquivo.bin'\n    }}};\n  });"
+      }
+    },
+    {
+      "id": "send-generated-file",
+      "name": "Send Generated File",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        400
+      ],
+      "parameters": {
+        "operation": "send",
+        "messageType": "={{ $json.messageType }}",
+        "mediaPath": "useMedian8n",
+        "mediaPropertyName": "data",
+        "phoneNumberId": "SEU_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $json.sender }}",
+        "additionalFields": {}
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Has Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Media": {
+      "main": [
+        [
+          {
+            "node": "Get Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bridge Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Media URL": {
+      "main": [
+        [
+          {
+            "node": "Download Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Media": {
+      "main": [
+        [
+          {
+            "node": "Bridge Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bridge Media": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bridge Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reply": {
+      "main": [
+        [
+          {
+            "node": "Text Parts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generated Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Parts": {
+      "main": [
+        [
+          {
+            "node": "Send Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generated Files": {
+      "main": [
+        [
+          {
+            "node": "Send Generated File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

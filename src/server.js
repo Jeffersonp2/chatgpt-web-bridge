@@ -1807,6 +1807,7 @@ app.post("/v1/chat/completions", upload.any(), async (req, res) => {
       created: unix(),
       model,
       session_id: sessionId,
+      output_text: baseText,
       choices: [
         {
           index: 0,
