@@ -56,7 +56,10 @@ Você continua usando sua conta do ChatGPT no navegador. O bridge recebe o input
 - ✅ Texto e código
 - ✅ Perfil do navegador salvo localmente
 - ✅ Fila para evitar duas mensagens brigando pela mesma aba
-- 🚧 Upload/entrada de imagens
+- ✅ Upload/entrada de imagens por base64/data URL (beta)
+- ✅ Entrada de áudio/gravações por base64/data URL (beta)
+- ✅ Entrada de arquivos genéricos por base64 (beta)
+- 🚧 Upload multipart/form-data e URLs HTTP remotas
 - ✅ Captura de links de imagens geradas
 - ✅ Extração de links de arquivos/anexos gerados (imagem, vídeo, ZIP, PDF, código e outros)
 - 🚧 Streaming token-a-token real
@@ -301,6 +304,94 @@ com body:
 
 ---
 
+
+## 🎙️ Entrada de áudio, imagem e arquivos em base64
+
+O bridge aceita anexos dentro de `messages[].content` e também em `attachments` no nível principal da requisição.
+
+### Áudio como comando
+
+Exemplo compatível com o formato `input_audio`:
+
+```json
+{
+  "model": "chatgpt-web",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_audio",
+          "input_audio": {
+            "data": "<BASE64>",
+            "format": "wav",
+            "filename": "comando.wav"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Quando o áudio for enviado sem texto junto, o bridge acrescenta uma instrução padrão para o ChatGPT ouvir o áudio e seguir uma eventual instrução falada; se não houver comando, ele responde normalmente ao conteúdo.
+
+Formatos inicialmente tratados: `wav`, `mp3`, `m4a/mp4`, `ogg` e `webm`.
+
+### Imagem em data URL
+
+```json
+{
+  "model": "chatgpt-web",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Descreva esta imagem."
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "data:image/png;base64,<BASE64>"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Anexo genérico
+
+Também pode ser enviado no nível principal:
+
+```json
+{
+  "model": "chatgpt-web",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Analise o arquivo anexado."
+    }
+  ],
+  "attachments": [
+    {
+      "filename": "dados.json",
+      "mime_type": "application/json",
+      "data": "<BASE64>"
+    }
+  ]
+}
+```
+
+A carga JSON padrão foi aumentada para `50mb` e pode ser alterada com `JSON_LIMIT`. Como base64 aumenta o tamanho em aproximadamente um terço, arquivos binários grandes devem futuramente usar `multipart/form-data`.
+
+> Esta entrada multimodal é beta e depende do controle de upload presente na interface atual do ChatGPT Web.
+
+---
+
 ## 🧠 Responses API
 
 ```powershell
@@ -369,7 +460,10 @@ As variáveis disponíveis estão em `.env.example`.
 - [ ] Captura incremental para streaming real
 - [ ] Seleção do modelo/modo disponível no ChatGPT
 - [x] Conversa persistente por padrão\n- [x] Rollover automático para um novo chat normal ao atingir limite da conversa
-- [ ] Entrada de imagens
+- [x] Entrada de imagens por base64/data URL (beta)
+- [x] Entrada de áudio por base64/data URL (beta)
+- [x] Entrada de arquivos genéricos por base64 (beta)
+- [ ] Upload multipart/form-data e URLs HTTP remotas
 - [ ] Melhor detecção de término da resposta
 
 ### v0.3
