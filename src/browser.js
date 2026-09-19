@@ -19,6 +19,8 @@ export class ChatGPTWebSession {
   constructor(options = {}) {
     this.profileDir = path.resolve(options.profileDir || ".data/chatgpt-profile");
     this.headless = options.headless ?? false;
+    this.hiddenWindow = options.hiddenWindow === true;
+    this.browserChannel = String(options.browserChannel || "").trim();
     this.timeoutMs = Number(options.timeoutMs || 180000);
     this.context = null;
     this.page = null;
@@ -398,6 +400,8 @@ export class ChatGPTWebSession {
     const session = new ChatGPTWebSession({
       profileDir: this.profileDir,
       headless: this.headless,
+      hiddenWindow: this.hiddenWindow,
+      browserChannel: this.browserChannel,
       timeoutMs: this.timeoutMs,
       sharedContext: this.context,
       ownsContext: false,
@@ -500,12 +504,47 @@ export class ChatGPTWebSession {
 
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
-          const context = await chromium.launchPersistentContext(this.profileDir, {
+          const launchArgs = ["--disable-blink-features=AutomationControlled"];
+
+          if (this.hiddenWindow && process.platform === "win32" && !this.headless) {
+            launchArgs.push(
+              "--window-position=-32000,-32000",
+              "--window-size=1440,980"
+            );
+          }
+
+          const launchOptions = {
             headless: this.headless,
             acceptDownloads: true,
             viewport: { width: 1440, height: 980 },
-            args: ["--disable-blink-features=AutomationControlled"]
-          });
+            args: launchArgs
+          };
+
+          if (this.browserChannel) {
+            launchOptions.channel = this.browserChannel;
+          }
+
+          let context;
+          try {
+            context = await chromium.launchPersistentContext(
+              this.profileDir,
+              launchOptions
+            );
+          } catch (channelError) {
+            if (!this.browserChannel) throw channelError;
+
+            console.warn(
+              `[bridge] Browser channel "${this.browserChannel}" could not start; falling back to Playwright Chromium: ${channelError.message}`
+            );
+
+            const fallbackOptions = { ...launchOptions };
+            delete fallbackOptions.channel;
+
+            context = await chromium.launchPersistentContext(
+              this.profileDir,
+              fallbackOptions
+            );
+          }
 
           this.context = context;
 
