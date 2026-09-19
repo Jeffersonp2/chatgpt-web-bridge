@@ -490,7 +490,7 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 | `MAX_REMOTE_FILE_BYTES` | `26214400` | Limite de download por URL remota |
 | `REMOTE_FETCH_TIMEOUT_MS` | `30000` | Timeout de URL remota |
 | `ALLOW_REMOTE_URL_INPUT` | `true` | Habilita entrada HTTP/HTTPS |
-| `LOCAL_API_KEY` | vazio | Proteção opcional para rotas `/v1` |
+| `LOCAL_API_KEY` | vazio | Protege rotas `/v1`; obrigatória quando `HOST` não é loopback |
 | `CORS_ORIGIN` | vazio | Origem CORS opcional para clientes web |
 | `HISTORY_MAX_RECENT_MESSAGES` | `60` | Quantidade máxima aproximada de mensagens recentes completas |
 | `HISTORY_MAX_RECENT_CHARS` | `80000` | Limite aproximado de caracteres no histórico recente |
@@ -539,7 +539,7 @@ Os campos sensíveis `DASHBOARD_TOKEN` e `LOCAL_API_KEY` não são exibidos em t
 
 O editor preserva comentários e variáveis desconhecidas já existentes no arquivo `.env`.
 
-Por segurança, o dashboard impede salvar uma configuração que exponha `HOST` fora do loopback sem um `DASHBOARD_TOKEN`.
+Por segurança, o dashboard impede salvar uma configuração que exponha `HOST` fora do loopback sem `DASHBOARD_TOKEN` e `LOCAL_API_KEY`. Sem a chave da API, as rotas `/v1` recusam requisições quando o servidor está exposto na rede.
 
 Depois de salvar, o arquivo é gravado no disco e o dashboard mostra:
 
@@ -596,6 +596,7 @@ No arquivo `.env`:
 ```text
 HOST=0.0.0.0
 DASHBOARD_TOKEN=troque-por-um-token-forte
+LOCAL_API_KEY=troque-por-outra-chave-forte
 REMOTE_BROWSER_CONTROL_ENABLED=true
 REMOTE_BROWSER_HIDDEN=true
 CHATGPT_HEADLESS=false
@@ -678,6 +679,7 @@ Crie ou edite o arquivo `.env`:
 ```text
 HOST=0.0.0.0
 DASHBOARD_TOKEN=troque-por-um-token-forte
+LOCAL_API_KEY=troque-por-outra-chave-forte
 REMOTE_LOGIN_ENABLED=true
 CHATGPT_HEADLESS=false
 ```

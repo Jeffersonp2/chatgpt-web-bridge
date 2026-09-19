@@ -175,6 +175,12 @@ const validateEnvUpdates = (updates, existingValues = {}) => {
     process.env.DASHBOARD_TOKEN ??
     ""
   ).trim();
+  const futureApiKey = String(
+    updates.LOCAL_API_KEY ??
+    existingValues.LOCAL_API_KEY ??
+    process.env.LOCAL_API_KEY ??
+    ""
+  ).trim();
 
   if (!futureHost) {
     errors.push("HOST não pode ficar vazio.");
@@ -187,6 +193,12 @@ const validateEnvUpdates = (updates, existingValues = {}) => {
     errors.push(
       "DASHBOARD_TOKEN é obrigatório quando HOST expõe o dashboard fora do loopback."
     );
+  }
+  if (
+    !["127.0.0.1", "::1", "localhost"].includes(futureHost.toLowerCase()) &&
+    !futureApiKey
+  ) {
+    errors.push("LOCAL_API_KEY é obrigatória quando HOST expõe a API fora do loopback.");
   }
 
   const futureProfileDir = String(
@@ -496,7 +508,15 @@ const closeSession = async (sessionId) => {
 };
 
 const apiAuth = (req, res, next) => {
-  if (!LOCAL_API_KEY) return next();
+  if (!LOCAL_API_KEY) {
+    if (isLoopbackHost(HOST)) return next();
+    return res.status(503).json({
+      error: {
+        message: "Set LOCAL_API_KEY before exposing /v1 outside loopback.",
+        type: "configuration_error"
+      }
+    });
+  }
 
   const authorization = String(req.get("authorization") || "");
   const bearer = authorization.toLowerCase().startsWith("bearer ")
@@ -504,7 +524,7 @@ const apiAuth = (req, res, next) => {
     : "";
   const token = bearer || String(req.get("x-api-key") || "");
 
-  if (token !== LOCAL_API_KEY) {
+  if (!safeTokenEqual(token, LOCAL_API_KEY)) {
     return res.status(401).json({
       error: {
         message: "Invalid local API key.",
