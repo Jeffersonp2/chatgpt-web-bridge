@@ -52,18 +52,22 @@ Você continua usando sua conta do ChatGPT no navegador. O bridge recebe o input
 - ✅ `GET /v1/models`
 - ✅ `POST /v1/chat/completions`
 - ✅ `POST /v1/responses`
-- ✅ Compatibilidade inicial com `stream: true`
+- ✅ Streaming incremental real com `stream: true` (deltas capturados enquanto a UI responde)
 - ✅ Texto e código
 - ✅ Perfil do navegador salvo localmente
-- ✅ Fila para evitar duas mensagens brigando pela mesma aba
+- ✅ Fila por sessão para evitar duas mensagens brigando pela mesma aba
 - ✅ Upload/entrada de imagens por base64/data URL (beta)
 - ✅ Entrada de áudio/gravações por base64/data URL (beta)
 - ✅ Entrada de arquivos genéricos por base64 (beta)
-- 🚧 Upload multipart/form-data e URLs HTTP remotas
+- ✅ Upload `multipart/form-data` em memória (beta)
+- ✅ Entrada por URL HTTP/HTTPS com limite de tamanho e timeout (beta)
 - ✅ Captura de links de imagens geradas
 - ✅ Extração de links de arquivos/anexos gerados (imagem, vídeo, ZIP, PDF, código e outros)
-- 🚧 Streaming token-a-token real
-- 🚧 Múltiplas sessões/abas simultâneas
+- ✅ Retorno opcional de arquivos/imagens em base64
+- ✅ Múltiplas sessões em abas paralelas via `session_id`
+- ✅ Seleção opcional de modo `instant`, `thinking` e `pro` (dependente da conta/UI)
+- ✅ Token local opcional para proteger `/v1`
+- ✅ Dashboard local de status
 
 ---
 
@@ -442,6 +446,12 @@ As variáveis disponíveis estão em `.env.example`.
 | `CHATGPT_PROFILE_DIR` | `.data/chatgpt-profile` | Perfil persistente |
 | `CHATGPT_HEADLESS` | `false` | Navegador visível/invisível |
 | `REQUEST_TIMEOUT_MS` | `180000` | Timeout de uma resposta |
+| `JSON_LIMIT` | `50mb` | Limite do corpo JSON/base64 |
+| `MAX_UPLOAD_MB` | `40` | Limite por arquivo multipart |
+| `MAX_REMOTE_FILE_BYTES` | `26214400` | Limite de download por URL remota |
+| `REMOTE_FETCH_TIMEOUT_MS` | `30000` | Timeout de URL remota |
+| `ALLOW_REMOTE_URL_INPUT` | `true` | Habilita entrada HTTP/HTTPS |
+| `LOCAL_API_KEY` | vazio | Proteção opcional para rotas `/v1` |
 
 > Recomenda-se manter `HOST=127.0.0.1`. Não exponha diretamente o bridge na internet sem autenticação, TLS e controles adicionais.
 
@@ -449,34 +459,239 @@ As variáveis disponíveis estão em `.env.example`.
 
 ## 🗺️ Roadmap
 
-### v0.1
+### Implementado
+
 - [x] Bridge HTTP local
 - [x] Login persistente
 - [x] Chat Completions
-- [x] Responses API básica
-- [x] Proteção do perfil via `.gitignore`
+- [x] Responses API
+- [x] Conversa persistente e rollover
+- [x] Entrada de imagens
+- [x] Entrada de áudio
+- [x] Entrada de arquivos
+- [x] Base64/data URL
+- [x] Multipart/form-data
+- [x] URLs HTTP/HTTPS como entrada
+- [x] Streaming incremental
+- [x] Captura de arquivos gerados
+- [x] Retorno por URL
+- [x] Retorno opcional em base64
+- [x] Sessões/abas paralelas
+- [x] Seleção de modo/modelo por alias
+- [x] Token local opcional
+- [x] Dashboard local
 
-### v0.2
-- [ ] Captura incremental para streaming real
-- [ ] Seleção do modelo/modo disponível no ChatGPT
-- [x] Conversa persistente por padrão\n- [x] Rollover automático para um novo chat normal ao atingir limite da conversa
-- [x] Entrada de imagens por base64/data URL (beta)
-- [x] Entrada de áudio por base64/data URL (beta)
-- [x] Entrada de arquivos genéricos por base64 (beta)
-- [ ] Upload multipart/form-data e URLs HTTP remotas
-- [ ] Melhor detecção de término da resposta
+### Ainda em estabilização
 
-### v0.3
-- [x] Captura de links de imagens geradas
-- [x] Retorno de links de arquivos/anexos gerados
-- [x] Retorno de imagens por URL\n- [ ] Retorno opcional em base64
-- [ ] Compatibilidade maior com SDKs OpenAI
+- [ ] Ciclo de vida do Chromium após alguns downloads do ChatGPT Web
+- [ ] Ajustes contínuos quando a interface do ChatGPT mudar
+- [ ] Granularidade de streaming exatamente por token — o bridge transmite deltas reais da UI, cuja granularidade depende da renderização do ChatGPT Web
 
-### v0.4
-- [ ] Pool de abas
-- [ ] Sessões paralelas
-- [ ] Token local para proteger `/v1`
-- [ ] Dashboard de status
+---
+
+
+## ⚡ Streaming incremental
+
+Com `stream: true`, o bridge não espera mais a resposta inteira para só então emitir um único evento. Ele observa o texto do turno do assistente enquanto a página é atualizada e envia apenas os deltas novos por SSE.
+
+> A transmissão é realmente incremental, mas a granularidade depende de como o ChatGPT Web atualiza o DOM. Portanto, um evento pode conter um ou vários tokens.
+
+Exemplo:
+
+```json
+{
+  "model": "chatgpt-web",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Conte de 1 até 20 devagar."
+    }
+  ]
+}
+```
+
+---
+
+## 🧵 Sessões paralelas / várias abas
+
+Use `session_id` para manter conversas independentes. Cada sessão recebe sua própria aba e sua própria fila.
+
+```json
+{
+  "model": "chatgpt-web",
+  "session_id": "cliente-a",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Meu nome nesta conversa é A."
+    }
+  ]
+}
+```
+
+Também é possível enviar:
+
+```text
+X-Session-Id: cliente-a
+```
+
+Endpoints auxiliares:
+
+```text
+GET    /v1/sessions
+POST   /v1/sessions
+DELETE /v1/sessions/:sessionId
+```
+
+Duas requisições usando IDs diferentes podem operar em abas diferentes. Requisições do mesmo `session_id` continuam serializadas para não disputar o mesmo composer.
+
+---
+
+## 🧠 Seleção de modo
+
+Aliases aceitos:
+
+```text
+chatgpt-web
+chatgpt-web-instant
+chatgpt-web-thinking
+chatgpt-web-pro
+```
+
+Também pode usar explicitamente:
+
+```json
+{
+  "model": "chatgpt-web",
+  "mode": "thinking"
+}
+```
+
+Os modos disponíveis dependem do plano e da interface atual da conta. Se o modo solicitado não estiver disponível, o bridge retorna erro em vez de trocar silenciosamente.
+
+---
+
+## 📤 Upload multipart/form-data
+
+Além de JSON/base64, `/v1/chat/completions`, `/v1/responses` e `/v1/images/generations` aceitam multipart.
+
+Exemplo com curl:
+
+```bash
+curl http://127.0.0.1:4310/v1/chat/completions \
+  -F 'model=chatgpt-web' \
+  -F 'messages=[{"role":"user","content":"Transcreva e responda ao áudio."}]' \
+  -F 'file=@comando.wav'
+```
+
+O upload fica em memória apenas durante a requisição. O limite padrão por arquivo é `40 MB`, configurável por `MAX_UPLOAD_MB`.
+
+---
+
+## 🌐 Entrada por URL remota
+
+Imagem:
+
+```json
+{
+  "model": "chatgpt-web",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Descreva a imagem."
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://exemplo.com/imagem.png"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Áudio e anexos também podem usar `url`. O bridge baixa o conteúdo, aplica limite/timeout e o envia para o controle de upload do ChatGPT Web.
+
+Variáveis:
+
+```text
+ALLOW_REMOTE_URL_INPUT=true
+MAX_REMOTE_FILE_BYTES=26214400
+REMOTE_FETCH_TIMEOUT_MS=30000
+```
+
+---
+
+## 📦 Saída opcional em base64
+
+Por padrão continuamos retornando URL, que é mais leve.
+
+Para incluir também base64 em `files[]`:
+
+```json
+{
+  "include_base64": true
+}
+```
+
+Para `/v1/images/generations`, também pode usar:
+
+```json
+{
+  "response_format": "b64_json"
+}
+```
+
+Quando disponível, cada arquivo recebe:
+
+```json
+{
+  "url": "https://...",
+  "b64_json": "JVBERi0xLjcK..."
+}
+```
+
+---
+
+## 🔑 Token local opcional
+
+O bridge continua sem exigir chave por padrão em `127.0.0.1`.
+
+Se quiser proteger `/v1`, defina:
+
+```text
+LOCAL_API_KEY=minha-chave-local
+```
+
+E envie:
+
+```text
+Authorization: Bearer minha-chave-local
+```
+
+ou:
+
+```text
+X-API-Key: minha-chave-local
+```
+
+---
+
+## 📊 Dashboard
+
+Com o servidor ativo:
+
+```text
+http://127.0.0.1:4310/dashboard
+```
+
+Ele exibe o estado do bridge, autenticação, sessões e recursos habilitados.
 
 ---
 
