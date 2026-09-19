@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 const CHATGPT_URL = "https://chatgpt.com/";
@@ -34,6 +35,8 @@ export class ChatGPTWebSession {
     this.ownsContext = options.ownsContext ?? !this.sharedContext;
     this.dedicatedPage = options.dedicatedPage === true;
     this.sessionId = options.sessionId || "default";
+    this.sessionStateLoaded = false;
+    this.stateWritePromise = Promise.resolve();
     this.stopping = false;
 
     if (this.sharedContext) {
@@ -41,11 +44,108 @@ export class ChatGPTWebSession {
     }
   }
 
+  sessionStateFile() {
+    const safeSessionId = String(this.sessionId || "default")
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .slice(0, 64) || "default";
+
+    return path.join(
+      path.dirname(this.profileDir),
+      "bridge-sessions",
+      `${safeSessionId}.json`
+    );
+  }
+
+  isPersistableConversationUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return (
+        url.protocol === "https:" &&
+        url.hostname === "chatgpt.com" &&
+        /^\/c\/[^/]+/.test(url.pathname)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async loadSessionState() {
+    if (this.sessionStateLoaded) return;
+
+    this.sessionStateLoaded = true;
+
+    try {
+      const raw = await fs.readFile(this.sessionStateFile(), "utf8");
+      const state = JSON.parse(raw);
+
+      if (this.isPersistableConversationUrl(state?.conversationUrl)) {
+        this.lastConversationUrl = state.conversationUrl;
+        console.log(
+          `[bridge] Restoring session "${this.sessionId}" at ${this.lastConversationUrl}`
+        );
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        console.warn(
+          `[bridge] Could not read persisted session "${this.sessionId}":`,
+          error.message
+        );
+      }
+    }
+  }
+
+  rememberConversationUrl(value) {
+    if (!this.isPersistableConversationUrl(value)) return false;
+
+    const url = String(value);
+    if (this.lastConversationUrl === url) return true;
+
+    this.lastConversationUrl = url;
+
+    this.stateWritePromise = this.stateWritePromise
+      .catch(() => {})
+      .then(async () => {
+        const file = this.sessionStateFile();
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(
+          file,
+          JSON.stringify({
+            sessionId: this.sessionId,
+            conversationUrl: url,
+            updatedAt: new Date().toISOString()
+          }, null, 2) + "\n",
+          "utf8"
+        );
+      })
+      .catch((error) => {
+        console.warn(
+          `[bridge] Could not persist session "${this.sessionId}":`,
+          error.message
+        );
+      });
+
+    return true;
+  }
+
+  async clearConversationState() {
+    this.lastConversationUrl = null;
+    await this.stateWritePromise.catch(() => {});
+
+    try {
+      await fs.rm(this.sessionStateFile(), { force: true });
+    } catch {}
+  }
+
   configurePage(page) {
     if (!page || this.configuredPages.has(page)) return;
 
     this.configuredPages.add(page);
     page.setDefaultTimeout(30000);
+
+    page.on("framenavigated", (frame) => {
+      if (page !== this.page || frame !== page.mainFrame()) return;
+      this.rememberConversationUrl(frame.url());
+    });
 
     page.on("close", () => {
       const wasActivePage = this.page === page;
@@ -128,6 +228,9 @@ export class ChatGPTWebSession {
       try {
         const pages = context.pages().filter((page) => !page.isClosed());
         const existing =
+          (this.lastConversationUrl
+            ? pages.find((page) => page.url() === this.lastConversationUrl)
+            : null) ||
           pages.find((page) => page.url().startsWith("https://chatgpt.com")) ||
           pages[0];
 
@@ -136,7 +239,10 @@ export class ChatGPTWebSession {
         this.page = recoveredPage;
 
         const recoveryUrl = this.lastConversationUrl || CHATGPT_URL;
-        if (!recoveredPage.url().startsWith("https://chatgpt.com")) {
+        if (
+          (this.lastConversationUrl && recoveredPage.url() !== this.lastConversationUrl) ||
+          (!this.lastConversationUrl && !recoveredPage.url().startsWith("https://chatgpt.com"))
+        ) {
           await recoveredPage.goto(recoveryUrl, { waitUntil: "domcontentloaded" });
         }
 
@@ -197,6 +303,7 @@ export class ChatGPTWebSession {
 
     this.startPromise = (async () => {
       this.stopping = false;
+      await this.loadSessionState();
 
       if (this.sharedContext) {
         this.context = this.sharedContext;
@@ -230,6 +337,12 @@ export class ChatGPTWebSession {
 
           if (!this.page || this.page.isClosed()) {
             this.page =
+              (this.lastConversationUrl
+                ? pages.find((page) =>
+                    page !== this.keeperPage &&
+                    page.url() === this.lastConversationUrl
+                  )
+                : null) ||
               pages.find((page) =>
                 page !== this.keeperPage &&
                 page.url().startsWith("https://chatgpt.com")
@@ -237,6 +350,14 @@ export class ChatGPTWebSession {
               await this.context.newPage();
 
             this.configurePage(this.page);
+
+            const targetUrl = this.lastConversationUrl || CHATGPT_URL;
+            if (
+              (this.lastConversationUrl && this.page.url() !== this.lastConversationUrl) ||
+              (!this.lastConversationUrl && !this.page.url().startsWith("https://chatgpt.com"))
+            ) {
+              await this.page.goto(targetUrl, { waitUntil: "domcontentloaded" });
+            }
           }
 
           if (this.page && !this.page.isClosed()) {
@@ -298,6 +419,12 @@ export class ChatGPTWebSession {
           }
 
           this.page =
+            (this.lastConversationUrl
+              ? pages.find((page) =>
+                  page !== this.keeperPage &&
+                  page.url() === this.lastConversationUrl
+                )
+              : null) ||
             pages.find((page) =>
               page !== this.keeperPage &&
               page.url().startsWith("https://chatgpt.com")
@@ -306,11 +433,12 @@ export class ChatGPTWebSession {
 
           this.configurePage(this.page);
 
-          if (!this.page.url().startsWith("https://chatgpt.com")) {
-            await this.page.goto(
-              this.lastConversationUrl || CHATGPT_URL,
-              { waitUntil: "domcontentloaded" }
-            );
+          const targetUrl = this.lastConversationUrl || CHATGPT_URL;
+          if (
+            (this.lastConversationUrl && this.page.url() !== this.lastConversationUrl) ||
+            (!this.lastConversationUrl && !this.page.url().startsWith("https://chatgpt.com"))
+          ) {
+            await this.page.goto(targetUrl, { waitUntil: "domcontentloaded" });
           }
 
           await this.page.bringToFront().catch(() => {});
@@ -451,6 +579,8 @@ export class ChatGPTWebSession {
         : null,
       url: this.page.url(),
       conversationActive: this.isConversationPage(),
+      sessionId: this.sessionId,
+      persistedConversationUrl: this.lastConversationUrl,
       rollovers: this.rollovers,
       profileDir: this.profileDir
     };
@@ -474,7 +604,7 @@ export class ChatGPTWebSession {
           await locator.waitFor({ state: "visible", timeout: perSelector });
 
           if (this.isConversationPage()) {
-            this.lastConversationUrl = this.page.url();
+            this.rememberConversationUrl(this.page.url());
           }
 
           return locator;
@@ -511,6 +641,7 @@ export class ChatGPTWebSession {
   }
 
   async newChat() {
+    await this.clearConversationState();
     await this.page.goto(CHATGPT_URL, { waitUntil: "domcontentloaded" });
     await this.findComposer();
   }
@@ -1694,7 +1825,7 @@ export class ChatGPTWebSession {
       const composer = await this.findComposer();
 
       if (this.isConversationPage()) {
-        this.lastConversationUrl = this.page.url();
+        this.rememberConversationUrl(this.page.url());
       }
 
       if (options.mode) {
