@@ -482,7 +482,8 @@ As variáveis disponíveis estão em `.env.example`. O servidor agora carrega au
 | `PORT` | `4310` | Porta HTTP |
 | `HOST` | `127.0.0.1` | Interface de rede |
 | `CHATGPT_PROFILE_DIR` | `.data/chatgpt-profile` | Perfil persistente |
-| `CHATGPT_HEADLESS` | `false` | Navegador visível/invisível |
+| `CHATGPT_HEADLESS` | `false` | Força headless real; normalmente deixe `false` no Windows |
+| `CHATGPT_BROWSER_CHANNEL` | vazio | Canal do navegador; no Windows vazio usa `chrome` automaticamente |
 | `REQUEST_TIMEOUT_MS` | `600000` | Timeout de uma resposta |
 | `JSON_LIMIT` | `50mb` | Limite do corpo JSON/base64 |
 | `MAX_UPLOAD_MB` | `40` | Limite por arquivo multipart |
@@ -1020,3 +1021,26 @@ Feito para experimentar **ChatGPT como backend local**, mantendo o processamento
 **Jeffersonp2/testeGPT**
 
 </div>
+
+
+### Windows: oculto sem headless
+
+No Windows, quando `REMOTE_BROWSER_HIDDEN=true` e `CHATGPT_HEADLESS=false`, o bridge usa modo **hidden/headful**: o navegador continua gráfico, mas a janela é posicionada fora da tela e continua acessível pelo dashboard. Isso evita depender de headless real para o login.
+
+Por padrão, no Windows o bridge tenta usar o canal `chrome` instalado no sistema e cai automaticamente para o Chromium do Playwright se esse canal não puder iniciar.
+
+Configuração recomendada:
+
+```text
+REMOTE_LOGIN_ENABLED=false
+REMOTE_BROWSER_CONTROL_ENABLED=true
+REMOTE_BROWSER_HIDDEN=true
+CHATGPT_HEADLESS=false
+CHATGPT_BROWSER_CHANNEL=
+```
+
+No console, o modo esperado é:
+
+```text
+[browser] mode: hidden/headful; channel: chrome
+```
