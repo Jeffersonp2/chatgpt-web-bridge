@@ -44,7 +44,11 @@ const upload = multer({
 const chatgpt = new ChatGPTWebSession({
   profileDir: process.env.CHATGPT_PROFILE_DIR || ".data/chatgpt-profile",
   headless: String(process.env.CHATGPT_HEADLESS || "false").toLowerCase() === "true",
-  timeoutMs: process.env.REQUEST_TIMEOUT_MS || 180000
+  timeoutMs: process.env.REQUEST_TIMEOUT_MS || 180000,
+  historyMaxRecentMessages: process.env.HISTORY_MAX_RECENT_MESSAGES || 60,
+  historyMaxRecentChars: process.env.HISTORY_MAX_RECENT_CHARS || 80000,
+  historyMessageClipChars: process.env.HISTORY_MESSAGE_CLIP_CHARS || 1600,
+  historySummaryMaxChars: process.env.HISTORY_SUMMARY_MAX_CHARS || 50000
 });
 
 const sessions = new Map([["default", chatgpt]]);
