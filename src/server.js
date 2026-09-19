@@ -113,6 +113,7 @@ const closeSession = async (sessionId) => {
   if (!session) return false;
 
   sessions.delete(normalized);
+  await session.clearConversationState().catch(() => {});
   await session.stop().catch(() => {});
   return true;
 };
