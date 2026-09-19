@@ -30,7 +30,15 @@ export class ChatGPTWebSession {
     this.pageRecoveryTimer = null;
     this.configuredPages = new WeakSet();
     this.keeperPage = null;
+    this.sharedContext = options.sharedContext || null;
+    this.ownsContext = options.ownsContext ?? !this.sharedContext;
+    this.dedicatedPage = options.dedicatedPage === true;
+    this.sessionId = options.sessionId || "default";
     this.stopping = false;
+
+    if (this.sharedContext) {
+      this.context = this.sharedContext;
+    }
   }
 
   configurePage(page) {
@@ -155,6 +163,32 @@ export class ChatGPTWebSession {
     }, 1200);
   }
 
+  async createTabSession(sessionId) {
+    await this.start();
+
+    const session = new ChatGPTWebSession({
+      profileDir: this.profileDir,
+      headless: this.headless,
+      timeoutMs: this.timeoutMs,
+      sharedContext: this.context,
+      ownsContext: false,
+      dedicatedPage: true,
+      sessionId
+    });
+
+    await session.start();
+    return session;
+  }
+
+  isUsableWithContext(context) {
+    return Boolean(
+      context &&
+      this.context === context &&
+      this.page &&
+      !this.page.isClosed()
+    );
+  }
+
   async start() {
     if (this.startPromise) {
       await this.startPromise;
@@ -163,6 +197,22 @@ export class ChatGPTWebSession {
 
     this.startPromise = (async () => {
       this.stopping = false;
+
+      if (this.sharedContext) {
+        this.context = this.sharedContext;
+
+        if (!this.page || this.page.isClosed()) {
+          this.page = await this.context.newPage();
+          this.configurePage(this.page);
+
+          await this.page.goto(
+            this.lastConversationUrl || CHATGPT_URL,
+            { waitUntil: "domcontentloaded" }
+          );
+        }
+
+        return;
+      }
 
       if (this.context) {
         try {
@@ -300,9 +350,15 @@ export class ChatGPTWebSession {
     }
 
     const context = this.context;
+    const page = this.page;
     this.context = null;
     this.page = null;
     this.keeperPage = null;
+
+    if (!this.ownsContext) {
+      await page?.close().catch(() => {});
+      return;
+    }
 
     await context?.close().catch(() => {});
   }
