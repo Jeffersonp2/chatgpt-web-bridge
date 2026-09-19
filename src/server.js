@@ -23,7 +23,7 @@ const ENV_SETTINGS = [
 
   { key: "CHATGPT_PROFILE_DIR", label: "Diretório do perfil ChatGPT", type: "text", default: ".data/chatgpt-profile", group: "ChatGPT" },
   { key: "CHATGPT_HEADLESS", label: "ChatGPT headless", type: "boolean", default: "false", group: "ChatGPT" },
-  { key: "REQUEST_TIMEOUT_MS", label: "Timeout da resposta (ms)", type: "number", default: "180000", group: "ChatGPT", min: 1000 },
+  { key: "REQUEST_TIMEOUT_MS", label: "Timeout da resposta (ms)", type: "number", default: "600000", group: "ChatGPT", min: 1000 },
   { key: "REMOTE_BROWSER_CONTROL_ENABLED", label: "Controle pelo dashboard", type: "boolean", default: "true", group: "ChatGPT" },
   { key: "REMOTE_BROWSER_HIDDEN", label: "Ocultar janela do Chromium", type: "boolean", default: "false", group: "ChatGPT" },
 
@@ -285,7 +285,7 @@ const EFFECTIVE_CHATGPT_HEADLESS =
 const chatgpt = new ChatGPTWebSession({
   profileDir: process.env.CHATGPT_PROFILE_DIR || ".data/chatgpt-profile",
   headless: EFFECTIVE_CHATGPT_HEADLESS,
-  timeoutMs: process.env.REQUEST_TIMEOUT_MS || 180000,
+  timeoutMs: process.env.REQUEST_TIMEOUT_MS || 600000,
   historyMaxRecentMessages: process.env.HISTORY_MAX_RECENT_MESSAGES || 60,
   historyMaxRecentChars: process.env.HISTORY_MAX_RECENT_CHARS || 80000,
   historyMessageClipChars: process.env.HISTORY_MESSAGE_CLIP_CHARS || 1600,
